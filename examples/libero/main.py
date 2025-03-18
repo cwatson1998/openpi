@@ -74,6 +74,7 @@ def eval_libero(args: Args) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    task_successes_dict = dict()
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -83,7 +84,7 @@ def eval_libero(args: Args) -> None:
 
         # Initialize LIBERO environment and task description
         env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed)
-
+        task_successes_dict[task_description] = 0
         # Start episodes
         task_episodes, task_successes = 0, 0
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
@@ -154,6 +155,7 @@ def eval_libero(args: Args) -> None:
                     if done:
                         task_successes += 1
                         total_successes += 1
+                        task_successes_dict[task_description] += 1
                         break
                     t += 1
 
@@ -168,7 +170,7 @@ def eval_libero(args: Args) -> None:
             suffix = "success" if done else "failure"
             task_segment = task_description.replace(" ", "_")
             imageio.mimwrite(
-                pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}.mp4",
+                pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}_{episode_idx}.mp4",
                 [np.asarray(x) for x in replay_images],
                 fps=10,
             )
@@ -184,6 +186,8 @@ def eval_libero(args: Args) -> None:
 
     logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
     logging.info(f"Total episodes: {total_episodes}")
+    for k, v in task_successes_dict:
+        print(f"{k}: {v}")
 
 
 def _get_libero_env(task, resolution, seed):
