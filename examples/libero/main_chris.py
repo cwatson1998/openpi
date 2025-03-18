@@ -3,6 +3,17 @@ import dataclasses
 import logging
 import math
 import pathlib
+from typing import Optional, List
+
+
+@dataclasses.dataclass
+class Args:
+    task_suite_name: str = "libero_spatial"
+    task_list: Optional[List[str]] = None  # Explicitly typed list
+    num_steps_wait: int = 10
+    num_trials_per_task: int = 50
+    video_out_path: str = "data/libero/videos"
+    seed: int = 7
 
 import imageio
 from libero.libero import benchmark
@@ -34,6 +45,10 @@ class Args:
     task_suite_name: str = (
         "libero_spatial"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     )
+    # task_list: list[str] | None = None  # I think in python <3.9 the type annotation has to be task_list: Optional[List[str]] = None
+    #task_id_list = None # Subset of tasks in the suite.
+    task_id_list: Optional[List[int]] = None # Subset of tasks in the suite.
+    # Be careful for libero_10, the task_order argument you pass to it will change this args meeting.
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
 
@@ -45,9 +60,14 @@ class Args:
     seed: int = 7  # Random Seed (for reproducibility)
 
 
+
 def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
+
+
+    
+
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -75,7 +95,18 @@ def eval_libero(args: Args) -> None:
     # Start evaluation
     total_episodes, total_successes = 0, 0
     task_successes_dict = dict()
-    for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+
+
+    # Make a list of task_id, task pairs.
+    if args.task_id_list is None:
+        task_id_list = list(range(num_tasks_in_suite))
+    else:
+        task_id_list = args.task_id_list
+
+
+
+    #for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+    for task_id in task_id_list:
         # Get task
         task = task_suite.get_task(task_id)
 
