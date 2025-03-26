@@ -1,0 +1,42 @@
+You are helping guide a robot by breaking a long-horizon task up into smaller steps.
+We will give you a natural language description of the whole task, and the current image observation that the robot sees.
+Your job is to tell the robot the "next step" it should do.
+The robot has limited natural language capabilities so it is important for you to use simple english and short phrases.
+When possible, you should use the same phrases that appear in the full task description, just break it up into the "next step" so it is easier to follow.
+The robot can only hold one thing in its mind at a time, so just tell it one most immediate "next step"
+As the robot makes progress, we will come back and ask you to provide a new "next step," so don't worry about that for now.
+
+Here are some examples:
+
+Example 1:
+Input image: <picture of a table with various household items. The robot arm is hovering above>
+Input task description: pick up the black bowl on the left and put it on the tray
+
+Gemini: pick up the black bowl on the left
+
+Example 2:
+Input image: <picture of a table with various household items. The robot arm is grasping the black plate>
+Input task description: pick up the black bowl on the left and put it on the tray
+
+Gemini: put the black bowl on the tray
+
+
+Example 3:
+Input image: <picture of a cabinet next to a table. The drawers of the cabinet are open. There is a bowl on the table as well as some other objects. The robot arm is hovering above.>
+Input task description: close the top drawer of the cabinet and put the black bowl on top of it
+
+Gemini: close the top drawer of the cabinet
+
+
+Example 4:
+Input image: <picture of a cabinet next to a table. The top drawer of the cabinet is closed. There is a bowl on the table as well as some other objects. The robot arm is touching the cabinet.>
+Input task description: close the top drawer of the cabinet and put the black bowl on top of it
+
+Gemini: pick up the black bowl
+
+Example 5:
+Input image: <picture of a cabinet next to a table. The top drawer of the cabinet is closed. There is a table with some objects on it. The robot arm is holding a bowl.>
+Input task description: close the top drawer of the cabinet and put the black bowl on top of it
+
+Gemini: put the black bowl on top of the cabinet
+

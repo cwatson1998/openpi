@@ -1,0 +1,21 @@
+# This only works with Python >=3.9, which is higher than vanilla pi0.
+google-genai
+google-auth
+openai
+requests
+python-dotenv
+jupyter
+ipykernel
+ipython
+notebook
+pillow
+numpy
+ffmpeg-python
+moviepy
+ffmpy
+h5py # Robosuite seems to want this when using python 3.9
+ipykernel
+# Other things that google auth seems to want.
+httpx
+anyio
+pydantic

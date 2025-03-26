@@ -1,18 +1,27 @@
+# THis is super hacked to do a decomposition of one task.
 import collections
 import dataclasses
 import logging
 import math
 import pathlib
-import os
-from dotenv import load_dotenv
 from typing import Optional, List
-from PIL import Image, ImageDraw, ImageFont
-
 from robosuite.wrappers import DataCollectionWrapper, Wrapper
-from decomposition.success_detector import get_client, hello_world, detect_success, hi_robot_stateless
 
 LARGE_INT = 999999999999
 
+#HACKY_BOWL_PROMPT = 'put the black bowl in the bottom drawer of the cabinet'
+#HACKY_DRAWER_PROMPT = 'close the cabinet'
+
+# This version uses the original prompt
+#HACKY_BOWL_PROMPT = 'put the black bowl in the bottom drawer of the cabinet and close it'
+#HACKY_DRAWER_PROMPT = 'put the black bowl in the bottom drawer of the cabinet and close it'
+
+# nice prompt
+#HACKY_BOWL_PROMPT = 'put the bowl in the drawer'
+#HACKY_DRAWER_PROMPT = 'close the drawer'
+
+HACKY_BOWL_PROMPT = 'put the black bowl in the bottom drawer of the cabinet'
+HACKY_DRAWER_PROMPT = 'close the bottom drawer of the cabinet'
 
 @dataclasses.dataclass
 class Args:
@@ -81,50 +90,7 @@ LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
 # In the future it would be good to get them from the bddl file or something.
 
 # def get_eval_predicate_function(predicate_name, *args):
-def draw_text_on_image(img_array, text, position=(10, 10), font_size=10, color=(255, 255, 255)):
-    """
-    Draw text onto a NumPy image array without spilling off the edges.
-
-    Args:
-        img_array: NumPy array of shape (H, W, 3), dtype=uint8
-        text: The string to draw
-        position: (x, y) coordinates for top-left corner of text
-        font_size: Size of font in pixels
-        color: RGB tuple
-
-    Returns:
-        NumPy array with text drawn on it
-    """
-    # Convert to PIL image
-    image = Image.fromarray(img_array)
-    draw = ImageDraw.Draw(image)
-
-    # Load a font (use a default if no .ttf file available)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
-    except IOError:
-        font = ImageFont.load_default()
-
-    # Get text size
-    try:
-        text_width, text_height = font.getbbox(text)[2:]
-    except AttributeError:
-        text_width, text_height = font.getsize(text)
-
     
-    img_width, img_height = image.size
-
-    # Clamp position to avoid overflow
-    x, y = position
-    if x + text_width > img_width:
-        x = img_width - text_width
-    if y + text_height > img_height:
-        y = img_height - text_height
-
-    # Draw text
-    draw.text((x, y), text, fill=color, font=font)
-
-    return np.array(image)
 
 def get_eval_predicate_function(predicate_tuple):
     ''' 
@@ -268,30 +234,20 @@ class Args:
     # Be careful for libero_10, the task_order argument you pass to it will change this args meeting.
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
-    success_terminates: bool = True
+
     #################################################################################################################
     # Utils
     #################################################################################################################
     video_out_path: str = "data/libero/videos"  # Path to save videos
     traj_out_path: Optional[str] = None # Path to save trajectories (using DataCollectionWrapper)
-    traj_obs_info_key_list : List[str] = None # Will pull these fields from the obs dict and put them in the action_info that gets saved.
-    superimpose_prompts: bool = True
+    traj_obs_info_key_list = None # Will pull these fields from the obs dict and put them in the action_info that gets saved.
 
-    # VQA
-    success_vqa_frequency: Optional[int] = None
-    hi_robot_frequency: Optional[int] = None
-    override_prompt: Optional[str] = None
 
     seed: int = 7  # Random Seed (for reproducibility)
 
 
 
 def eval_libero(args: Args) -> None:
-    # Needed for VLM access.
-    load_dotenv()
-    api_key = os.getenv("GOOGLE_API_KEY")
-    google_client = get_client(api_key)
-    
     # Set random seed
     np.random.seed(args.seed)
 
@@ -346,6 +302,7 @@ def eval_libero(args: Args) -> None:
         # Initialize LIBERO environment and task description
         env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed)
         task_successes_dict[task_description] = 0
+        task_successes_dict['bowl'] = 0
 
         # Wrap if saving
         if args.traj_out_path is not None:
@@ -358,7 +315,9 @@ def eval_libero(args: Args) -> None:
 
         # Start episodes
         task_episodes, task_successes = 0, 0
+        
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
+            hacky_finished_place = False
             logging.info(f"\nTask: {task_description}")
 
             # Reset environment
@@ -371,14 +330,9 @@ def eval_libero(args: Args) -> None:
             # Setup
             t = 0
             replay_images = []
-            replay_prompts = []
-            first_success = -1
-            first_perceived_success=-1
-            successful = False
+
             logging.info(f"Starting episode {task_episodes+1}...")
-            low_level_task_description = None
             while t < max_steps + args.num_steps_wait:
-                # print(f"debug: step {t}")
                 try:
                     # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                     # and we need to wait for them to fall
@@ -397,31 +351,15 @@ def eval_libero(args: Args) -> None:
                     wrist_img = image_tools.convert_to_uint8(
                         image_tools.resize_with_pad(wrist_img, args.resize_size, args.resize_size)
                     )
-                    if args.hi_robot_frequency and t % args.hi_robot_frequency == 0:
-                        low_level_task_description = hi_robot_stateless(google_client, Image.fromarray(img), task_description)
 
-
-                    if args.success_vqa_frequency and first_perceived_success < 0 and (t % args.success_vqa_frequency == 0):
-                        assert not args.hi_robot_frequency
-                        pil_img = Image.fromarray(img)
-                        if detect_success(google_client, pil_img, task_description):
-                            print(f"Gemini says success at time {t}")
-                            first_perceived_success = t
-                        else:
-                            print(f"Gemini says failure at time {t}")
-                        
+                    # Save preprocessed image for replay video
+                    replay_images.append(img)
                     
-
                     if not action_plan:
                         
-                        if args.override_prompt is not None:
-                            pi0_prompt = args.override_prompt
-                            #print(f'debug: overriding prompt to {pi0_prompt}')
-                        elif low_level_task_description is not None:
-                            pi0_prompt = low_level_task_description
-                        else:
-                            pi0_prompt = str(task_description)
-                        
+
+
+
                         # Finished executing previous action chunk -- compute new chunk
                         # Prepare observations dict
                         element = {
@@ -434,7 +372,7 @@ def eval_libero(args: Args) -> None:
                                     obs["robot0_gripper_qpos"],
                                 )
                             ),
-                            "prompt": pi0_prompt,
+                            "prompt": HACKY_DRAWER_PROMPT if hacky_finished_place else HACKY_BOWL_PROMPT,
                         }
 
                         # Query model to get action
@@ -444,57 +382,34 @@ def eval_libero(args: Args) -> None:
                         ), f"We want to replan every {args.replan_steps} steps, but policy only predicts {len(action_chunk)} steps."
                         action_plan.extend(action_chunk[: args.replan_steps])
 
-
-
-                    # Save preprocessed image for replay video
-                    replay_images.append(img)
-                    replay_prompts.append(pi0_prompt)
-
-
                     action = action_plan.popleft()
 
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
+                    if info['In akita_black_bowl_1 white_cabinet_1_bottom_region']:
+                        hacky_finished_place = True
                     #print(f'debug: info: {info}')
-                    if done and not successful:
-                        print(f'debug: First true success at time {t}')
-                        first_success = t
-                        successful = True
+                    if done:
+                        task_successes += 1
+                        total_successes += 1
+                        task_successes_dict[task_description] += 1
+                        
 
-                
-                    if done and args.success_terminates:
                         break
-
-                    #if done:
-                    #    task_successes += 1
-                    #    total_successes += 1
-                    #    task_successes_dict[task_description] += 1
-                    #    break
                     t += 1
 
                 except Exception as e:
                     logging.error(f"Caught exception: {e}")
                     break
-            if successful:
-                task_successes += 1
-                total_successes += 1
-                task_successes_dict[task_description] += 1
+
+            if hacky_finished_place:
+                task_successes_dict['bowl'] += 1
             task_episodes += 1
             total_episodes += 1
 
             # Save a replay video of the episode
-            if successful:
-                suffix = f"t{first_success}success"
-            else:
-                suffix = "failure"
-            if first_perceived_success >= 0:
-                suffix = f"t{first_perceived_success}perceived_{suffix}"
+            suffix = "success" if done else "failure"
             task_segment = task_description.replace(" ", "_")
-
-            if args.superimpose_prompts:
-                replay_images = [draw_text_on_image(np.asarray(x), prompt) for x, prompt in zip(replay_images, replay_prompts)]
-
-
             imageio.mimwrite(
                 pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}_{episode_idx}.mp4",
                 [np.asarray(x) for x in replay_images],
@@ -514,6 +429,8 @@ def eval_libero(args: Args) -> None:
     env.close()
     logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
     logging.info(f"Total episodes: {total_episodes}")
+    print(HACKY_BOWL_PROMPT)
+    print(HACKY_DRAWER_PROMPT)
     for k, v in task_successes_dict.items():
         print(f"{k}: {v}")
 
