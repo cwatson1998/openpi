@@ -1,0 +1,2 @@
+python examples/libero/main_chris.py --args.num-trials-per-task=20 --args.video_out_path="data/libero/videos/libero_10_hi_robot_lite_20_trials" --args.traj-out-path=None  --args.task-suite-name="libero_10" --args.superimpose-prompts --args.hi-robot-frequency=20
+python examples/libero/main_chris.py --args.num-trials-per-task=20 --args.video_out_path="data/libero/videos/libero_10_empty_prompt_20_trials" --args.traj-out-path=None  --args.task-suite-name="libero_10" --args.superimpose-prompts --args.override_prompt=""

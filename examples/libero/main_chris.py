@@ -27,6 +27,7 @@ import imageio
 from libero.libero import benchmark
 from libero.libero import get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
+from libero.libero.envs.env_wrapper import DemoRenderEnv
 import numpy as np
 from openpi_client import image_tools
 from openpi_client import websocket_client_policy as _websocket_client_policy
@@ -282,6 +283,10 @@ class Args:
     hi_robot_frequency: Optional[int] = None
     override_prompt: Optional[str] = None
 
+
+    # Manual Prompting
+    manual_prompting: bool = False
+
     seed: int = 7  # Random Seed (for reproducibility)
 
 
@@ -453,6 +458,10 @@ def eval_libero(args: Args) -> None:
 
                     action = action_plan.popleft()
 
+                    if args.manual_prompting:
+                        # TODO: wait for human to press enter on the command line
+                        input("Press Enter to execute the next timestep...")
+                        env.render()
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
                     #print(f'debug: info: {info}')
@@ -518,12 +527,18 @@ def eval_libero(args: Args) -> None:
         print(f"{k}: {v}")
 
 
-def _get_libero_env(task, resolution, seed, traj_out_path=None):
-    """Initializes and returns the LIBERO environment, along with the task description."""
+def _get_libero_env(task, resolution, seed, traj_out_path=None, demo_render_env=False):
+    """Initializes and returns the LIBERO environment, along with the task description.
+        # TODO: Remove the demo_render_env functionality.
+    """
     task_description = task.language
     task_bddl_file = pathlib.Path(get_libero_path("bddl_files")) / task.problem_folder / task.bddl_file
     env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
-    env = OffScreenRenderEnv(**env_args)
+    if demo_render_env:
+        print("debug: warning: you chose the demo_render_env.")
+        env = DemoRenderEnv(**env_args)
+    else:
+        env = OffScreenRenderEnv(**env_args)
     env.seed(seed)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     return env, task_description
 
@@ -540,7 +555,7 @@ def _quat2axisangle(quat):
 
     den = np.sqrt(1.0 - quat[3] * quat[3])
     if math.isclose(den, 0.0):
-        # This is (close to) a zero degree rotation, immediately return
+        # This is (close to) a zero degree rotation, immediately rturn
         return np.zeros(3)
 
     return (quat[:3] * 2.0 * math.acos(quat[3])) / den

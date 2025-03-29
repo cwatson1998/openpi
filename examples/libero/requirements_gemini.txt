@@ -14,8 +14,13 @@ ffmpeg-python
 moviepy
 ffmpy
 h5py # Robosuite seems to want this when using python 3.9
-ipykernel
-# Other things that google auth seems to want.
+ipykernel # Other things that seem to be needed
 httpx
 anyio
 pydantic
+cachetools
+rsa
+pyasn1_modules
+pyasn1
+exceptiongroup
+sniffio

@@ -10,7 +10,6 @@ FALSE_WORDS = ['false', 'no']
 
 with open('decomposition/prompts/hi-robot-lite.txt') as f:
     hi_robot_lite_prompt = f.read()
-print(hi_robot_lite_prompt)
 
 class RetryWrapper:
     def __init__(self, base_object, max_retries=16, retry_latency=0.1):
