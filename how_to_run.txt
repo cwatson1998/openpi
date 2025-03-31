@@ -3,7 +3,7 @@ source examples/libero/.gemini-venv-3-9/bin/activate
 export PYTHONPATH=$PYTHONPATH:$PWD/third_party/libero
 time XLA_PYTHON_CLIENT_MEM_FRACTION=0.8 python examples/libero/main_chris.py --args.num-trials-per-task=10 --args.video_out_path="data/libero/videos/libero_10_hi_robot_30_freq" --args.traj-out-path=None  --args.task-suite-name="libero_10" --args.superimpose-prompts --args.hi-robot-frequency=30
 
-
+Hello world!!
 
 wINDOW 2:
 uv run scripts/serve_policy.py --env LIBERO
