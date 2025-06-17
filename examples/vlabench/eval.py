@@ -100,8 +100,13 @@ def main(args:Args) -> None:
     metrics = args.metrics.split(" ")
     assert isinstance(tasks, list)
 
-    with open(args.episode_config_path, "r")  as f:
-        episode_configs=json.load(f)
+    if args.episode_config_path and os.path.exists(args.episode_config_path):
+        with open(args.episode_config_path, "r")  as f:
+            episode_configs=json.load(f)
+    else:
+        # If the config path is not provided or does not exist, fall back to generating episodes via random seeds.
+        print("WARNING FROM CHRIS: No eval supplied, so we are using None as episode config!!!!!!!!!!!!!!!!")
+        episode_configs = None
     client = _websocket_client_policy.WebsocketClientPolicy(args.host, args.port)
     policy = Pi0(
         client=client,
