@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Base paths
 CONFIG_DIR="/app/VLABench/VLABench/configs/evaluation/tracks"
-SAVE_BASE="${HOME}/data/vlabench_results/pi0_base_vlabench_lora_quickstart_vis"
+SAVE_BASE="${HOME}/data/vlabench_results/pi0_fast_primitive_vis"
 SCRIPT="examples/vlabench/eval.py"
-TASKS="select_painting"
+TASKS="add_condiment insert_flower select_book select_chemistry_tube select_drink select_fruit select_mahjong select_painting select_poker select_toy"
 N_EPISODE=10
 
 
@@ -27,9 +27,7 @@ for cfg in "$CONFIG_DIR"/*.json; do
   python "$SCRIPT" \
     --args.episode-config-path "$cfg" \
     --args.save_dir "$save_dir" \
+    --args.tasks "$TASKS" \
     --args.n_episode "$N_EPISODE" \
     --args.visulization
 done
-
-
-

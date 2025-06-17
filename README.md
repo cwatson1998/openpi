@@ -1,3 +1,9 @@
+
+This command works for inference.
+The trick is make it point to snapshot
+and you have to rename the norm stats from _500 to not having _500 in the name
+/app/.local/bin/uv run scripts/serve_policy.py --env VLABENCH policy:checkpoint --policy.config=pi0_vlabench_primitive_lora --policy.dir=/home/christopher/.cache/huggingface/hub/models--VLABench--pi0-base-primitive/snapshots/2a05634f864f379277eaf2cae63b35ad4c597570
+
 # openpi adapted to VLABench
 
 openpi holds open-source models and packages for robotics, published by the [Physical Intelligence team](https://www.physicalintelligence.company/).
