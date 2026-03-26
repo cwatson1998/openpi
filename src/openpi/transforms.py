@@ -1,5 +1,6 @@
 from collections.abc import Callable, Mapping, Sequence
 import dataclasses
+import logging
 import re
 from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
 
@@ -14,6 +15,7 @@ from openpi.shared import normalize as _normalize
 
 DataDict: TypeAlias = at.PyTree
 NormStats: TypeAlias = _normalize.NormStats
+logger = logging.getLogger("openpi")
 
 
 T = TypeVar("T")
@@ -290,6 +292,20 @@ class ExtractFASTActions(DataTransformFn):
             **data,
             "actions": actions,
         }
+
+
+@dataclasses.dataclass(frozen=True)
+class LogFASTTokens(DataTransformFn):
+    tokenizer: _tokenizer.FASTTokenizer
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if "actions" not in data:
+            return data
+
+        tokens = data["actions"]
+        decoded = self.tokenizer.decode_tokens(tokens.astype(np.int32))
+        logger.info("FAST decoded output: %s", decoded)
+        return data
 
 
 @dataclasses.dataclass(frozen=True)

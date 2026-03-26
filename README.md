@@ -124,6 +124,21 @@ We provide a minimal example script for converting Libero data to a LeRobot data
 uv run examples/libero/convert_libero_data_to_lerobot.py --data_dir /path/to/your/libero/data
 ```
 
+If you want to fine-tune on a task subset instead of the full merged dataset, you can create a reusable split file and convert only the training tasks. For example, the command below keeps 7 tasks from `libero_object` for training and reserves the other 3 for evaluation:
+
+```bash
+uv run examples/libero/create_task_split.py data/libero/object_7train_3eval.json libero_object \
+  --train_task_indices 0 1 2 3 4 5 6
+
+uv run examples/libero/convert_libero_data_to_lerobot.py \
+  --data_dir data/libero/raw \
+  --download \
+  --repo_name local/libero_object_train7 \
+  --suite_names libero_object \
+  --task_split_file data/libero/object_7train_3eval.json \
+  --task_split train
+```
+
 ### 2. Defining training configs and running training
 
 To fine-tune a base model on your own data, you need to define configs for data processing and training. We provide example configs with detailed comments for Libero below, which you can modify for your own dataset:
@@ -137,13 +152,37 @@ We provide example fine-tuning configs for both, [π₀](src/openpi/training/con
 Before we can run training, we need to compute the normalization statistics for the training data. Run the script below with the name of your training config:
 
 ```bash
-uv run scripts/compute_norm_stats.py --config-name pi0_fast_libero
+uv run scripts/compute_norm_stats.py pi0_fast_libero
+```
+
+For a task subset, override the dataset location, enable local-only loading, select a separate asset id for subset-specific normalization stats, and point the config at the same split file:
+
+```bash
+uv run scripts/compute_norm_stats.py pi0_fast_libero \
+  --data.repo_id local/libero_object_train7 \
+  --data.base_config.local_files_only=true \
+  --data.assets.asset_id libero_object_train7 \
+  --data.task_split_file data/libero/object_7train_3eval.json \
+  --data.task_split train
 ```
 
 Now we can kick off training with the following command (the `--overwrite` flag is used to overwrite existing checkpoints if you rerun fine-tuning with the same config):
 
 ```bash
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi0_fast_libero --exp-name=my_experiment --overwrite
+```
+
+The same overrides work for training:
+
+```bash
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi0_fast_libero \
+  --exp-name=my_object_subset \
+  --overwrite \
+  --data.repo_id local/libero_object_train7 \
+  --data.base_config.local_files_only=true \
+  --data.assets.asset_id libero_object_train7 \
+  --data.task_split_file data/libero/object_7train_3eval.json \
+  --data.task_split train
 ```
 
 The command will log training progress to the console and save checkpoints to the `checkpoints` directory. You can also monitor training progress on the Weights & Biases dashboard. For maximally using the GPU memory, set `XLA_PYTHON_CLIENT_MEM_FRACTION=0.9` before running training -- this enables JAX to use up to 90% of the GPU memory (vs. the default of 75%).
@@ -159,6 +198,8 @@ uv run scripts/serve_policy.py policy:checkpoint --policy.config=pi0_fast_libero
 ```
 
 This will spin up a server that listens on port 8000 and waits for observations to be sent to it. We can then run the Libero evaluation script to query the server. For instructions how to install Libero and run the evaluation script, see the [Libero README](examples/libero/README.md).
+
+Important: run `scripts/serve_policy.py` from the root OpenPI environment with `uv run` or another Python 3.11+ environment. Do not run the policy server from `examples/libero/.venv`, which is a separate Python 3.10 environment used for the LIBERO evaluator.
 
 If you want to embed a policy server call in your own robot runtime, we have a minimal example of how to do so in the [remote inference docs](docs/remote_inference.md).
 
@@ -185,6 +226,6 @@ We will collect common issues and their solutions here. If you encounter an issu
 | Missing norm stats error when training    | Run `scripts/compute_norm_stats.py` with your config name before starting training.                                                                                                          |
 | Dataset download fails                    | Check your internet connection. If using `local_files_only=True`, verify the dataset exists locally. For HuggingFace datasets, ensure you're logged in (`huggingface-cli login`).            |
 | CUDA/GPU errors                           | Verify NVIDIA drivers and CUDA toolkit are installed correctly. For Docker, ensure nvidia-container-toolkit is installed. Check GPU compatibility.                                           |
+| `SyntaxError` at `match args.policy`      | You are running `scripts/serve_policy.py` with Python 3.8 or 3.9. Run it via `uv run` or another Python 3.11+ OpenPI environment instead of `examples/libero/.venv`.                        |
 | Import errors when running examples       | Make sure you've installed all dependencies with `uv sync` and activated the virtual environment. Some examples may have additional requirements listed in their READMEs.                    |
 | Action dimensions mismatch                | Verify your data processing transforms match the expected input/output dimensions of your robot. Check the action space definitions in your policy classes.                                  |
-

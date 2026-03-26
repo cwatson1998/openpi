@@ -37,7 +37,7 @@ def create_dataset(config: _config.TrainConfig) -> tuple[_config.DataConfig, _da
     return data_config, dataset
 
 
-def main(config_name: str, max_frames: int | None = None):
+def main(config_name: str, max_frames: int | None = None, num_workers: int = 8):
     config = _config.get_config(config_name)
     data_config, dataset = create_dataset(config)
 
@@ -51,7 +51,7 @@ def main(config_name: str, max_frames: int | None = None):
     data_loader = _data_loader.TorchDataLoader(
         dataset,
         local_batch_size=1,
-        num_workers=8,
+        num_workers=num_workers,
         shuffle=shuffle,
         num_batches=num_frames,
     )
@@ -66,7 +66,10 @@ def main(config_name: str, max_frames: int | None = None):
 
     norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
 
-    output_path = config.assets_dirs / data_config.repo_id
+    asset_id = data_config.asset_id or data_config.repo_id
+    if asset_id is None:
+        raise ValueError("Data config must have an asset_id or repo_id to write normalization stats.")
+    output_path = config.assets_dirs / asset_id
     print(f"Writing stats to: {output_path}")
     normalize.save(output_path, norm_stats)
 

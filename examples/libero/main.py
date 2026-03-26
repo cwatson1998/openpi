@@ -1,8 +1,10 @@
 import collections
 import dataclasses
+import json
 import logging
 import math
 import pathlib
+from datetime import datetime, timezone
 
 import imageio
 from libero.libero import benchmark
@@ -13,6 +15,8 @@ from openpi_client import image_tools
 from openpi_client import websocket_client_policy as _websocket_client_policy
 import tqdm
 import tyro
+
+from openpi.training import libero as libero_utils
 
 LIBERO_DUMMY_ACTION = [0.0] * 6 + [-1.0]
 LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
@@ -34,6 +38,10 @@ class Args:
     task_suite_name: str = (
         "libero_spatial"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     )
+    task_indices: tuple[int, ...] = ()
+    task_names: tuple[str, ...] = ()
+    task_split_file: str | None = None
+    task_split: str = "eval"
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
 
@@ -41,6 +49,7 @@ class Args:
     # Utils
     #################################################################################################################
     video_out_path: str = "data/libero/videos"  # Path to save videos
+    results_out_path: str | None = None  # Optional path to save aggregated results JSON
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -54,8 +63,26 @@ def eval_libero(args: Args) -> None:
     task_suite = benchmark_dict[args.task_suite_name]()
     num_tasks_in_suite = task_suite.n_tasks
     logging.info(f"Task suite: {args.task_suite_name}")
+    selected_tasks = libero_utils.resolve_task_filters(
+        task_suite_name=args.task_suite_name,
+        task_indices=args.task_indices,
+        task_names=args.task_names,
+        task_split_file=args.task_split_file,
+        task_split=args.task_split,
+    )
+    selected_task_set = {task.casefold() for task in selected_tasks}
+    selected_task_ids = [
+        task_id
+        for task_id in range(num_tasks_in_suite)
+        if not selected_task_set or task_suite.get_task(task_id).language.casefold() in selected_task_set
+    ]
+    if not selected_task_ids:
+        raise ValueError("No LIBERO evaluation tasks matched the requested task filter.")
 
-    pathlib.Path(args.video_out_path).mkdir(parents=True, exist_ok=True)
+    video_out_path = pathlib.Path(args.video_out_path)
+    video_out_path.mkdir(parents=True, exist_ok=True)
+    results_out_path = pathlib.Path(args.results_out_path) if args.results_out_path else video_out_path / "results.json"
+    results_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.task_suite_name == "libero_spatial":
         max_steps = 220  # longest training demo has 193 steps
@@ -74,7 +101,8 @@ def eval_libero(args: Args) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
-    for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
+    task_results = []
+    for task_id in tqdm.tqdm(selected_task_ids):
         # Get task
         task = task_suite.get_task(task_id)
 
@@ -86,6 +114,7 @@ def eval_libero(args: Args) -> None:
 
         # Start episodes
         task_episodes, task_successes = 0, 0
+        episode_results = []
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
             logging.info(f"\nTask: {task_description}")
 
@@ -99,6 +128,8 @@ def eval_libero(args: Args) -> None:
             # Setup
             t = 0
             replay_images = []
+            done = False
+            error = None
 
             logging.info(f"Starting episode {task_episodes+1}...")
             while t < max_steps + args.num_steps_wait:
@@ -159,6 +190,7 @@ def eval_libero(args: Args) -> None:
 
                 except Exception as e:
                     logging.error(f"Caught exception: {e}")
+                    error = str(e)
                     break
 
             task_episodes += 1
@@ -167,10 +199,16 @@ def eval_libero(args: Args) -> None:
             # Save a replay video of the episode
             suffix = "success" if done else "failure"
             task_segment = task_description.replace(" ", "_")
-            imageio.mimwrite(
-                pathlib.Path(args.video_out_path) / f"rollout_{task_segment}_{suffix}.mp4",
-                [np.asarray(x) for x in replay_images],
-                fps=10,
+            video_path = video_out_path / f"rollout_{task_segment}_{suffix}.mp4"
+            imageio.mimwrite(video_path, [np.asarray(x) for x in replay_images], fps=10)
+            episode_results.append(
+                {
+                    "episode_index": episode_idx,
+                    "success": bool(done),
+                    "steps_taken": t,
+                    "video_path": str(video_path),
+                    "error": error,
+                }
             )
 
             # Log current results
@@ -181,9 +219,42 @@ def eval_libero(args: Args) -> None:
         # Log final results
         logging.info(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         logging.info(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+        task_results.append(
+            {
+                "task_id": task_id,
+                "task_description": task_description,
+                "episodes": task_episodes,
+                "successes": task_successes,
+                "success_rate": float(task_successes) / float(task_episodes),
+                "episode_results": episode_results,
+            }
+        )
 
-    logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
+    total_success_rate = float(total_successes) / float(total_episodes)
+    logging.info(f"Total success rate: {total_success_rate}")
     logging.info(f"Total episodes: {total_episodes}")
+    results = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "task_suite_name": args.task_suite_name,
+        "task_split_file": args.task_split_file,
+        "task_split": args.task_split,
+        "selected_task_ids": selected_task_ids,
+        "selected_tasks": selected_tasks,
+        "num_trials_per_task": args.num_trials_per_task,
+        "num_steps_wait": args.num_steps_wait,
+        "replan_steps": args.replan_steps,
+        "resize_size": args.resize_size,
+        "seed": args.seed,
+        "host": args.host,
+        "port": args.port,
+        "video_out_path": str(video_out_path),
+        "total_episodes": total_episodes,
+        "total_successes": total_successes,
+        "total_success_rate": total_success_rate,
+        "task_results": task_results,
+    }
+    results_out_path.write_text(json.dumps(results, indent=2) + "\n")
+    logging.info(f"Saved results JSON to {results_out_path}")
 
 
 def _get_libero_env(task, resolution, seed):

@@ -23,6 +23,7 @@ import openpi.policies.libero_policy as libero_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.optimizer as _optimizer
+import openpi.training.libero as libero_utils
 import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 
@@ -86,9 +87,15 @@ class DataConfig:
 
     # If true, will use the LeRobot dataset task to define the prompt.
     prompt_from_task: bool = False
+    # Optional JSON file containing alternative task descriptions to use as prompts instead of the dataset task text.
+    # This is keyed by task instruction via `src/openpi/training/libero_logic.py`.
+    task_description_path: str | None = None
 
     # If true, will disable syncing the dataset from the Hugging Face Hub. Allows training on local-only datasets.
     local_files_only: bool = False
+
+    # Optional task-level filter used to select a subset of episodes from a LeRobot dataset.
+    task_filters: Sequence[str] = ()
 
 
 class GroupFactory(Protocol):
@@ -257,6 +264,20 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
     comments below.
     """
 
+    # Optional official LIBERO task suite name. If set without task indices/names, all tasks from the suite are used.
+    task_suite_name: str | None = None
+    # Optional task indices in the suite order used by the official LIBERO benchmark.
+    task_indices: Sequence[int] = ()
+    # Optional task names or language instructions to include.
+    task_names: Sequence[str] = ()
+    # Optional JSON split file produced by examples/libero/create_task_split.py.
+    task_split_file: str | None = None
+    # Which split to read from the split file.
+    task_split: str = "train"
+    # Optional JSON file containing alternate task descriptions (for example logic-based descriptions).
+    # If provided, training will use these descriptions as prompts instead of the dataset's natural-language tasks.
+    task_description_path: str | None = None
+
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
         # The repack transform is *only* applied to the data coming from the dataset,
@@ -320,6 +341,14 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            task_description_path=self.task_description_path,
+            task_filters=libero_utils.resolve_task_filters(
+                task_suite_name=self.task_suite_name,
+                task_indices=self.task_indices,
+                task_names=self.task_names,
+                task_split_file=self.task_split_file,
+                task_split=self.task_split,
+            ),
         )
 
 
@@ -574,6 +603,43 @@ _CONFIGS = [
             action_dim=7, action_horizon=10, max_token_len=180, paligemma_variant="gemma_2b_lora"
         ).get_freeze_filter(),
         # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+    ),
+    TrainConfig(
+        name="pi0_fast_libero_object_train7",
+        model=pi0_fast.Pi0FASTConfig(action_dim=7, action_horizon=10, max_token_len=180),
+        data=LeRobotLiberoDataConfig(
+            repo_id="local/libero_object_train7",
+            assets=AssetsConfig(asset_id="libero_object_train7"),
+            base_config=DataConfig(
+                local_files_only=True,
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi0_fast_libero_object_train7_low_mem_finetune",
+        model=pi0_fast.Pi0FASTConfig(
+            action_dim=7, action_horizon=10, max_token_len=180, paligemma_variant="gemma_2b_lora"
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="local/libero_object_train7",
+            assets=AssetsConfig(
+                asset_id="libero_object_train7",
+                assets_dir="./assets/pi0_fast_libero_object_train7",
+            ),
+            base_config=DataConfig(
+                local_files_only=True,
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=30_000,
+        freeze_filter=pi0_fast.Pi0FASTConfig(
+            action_dim=7, action_horizon=10, max_token_len=180, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
         ema_decay=None,
     ),
     #

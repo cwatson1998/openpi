@@ -35,6 +35,7 @@ def create_trained_policy(
     sample_kwargs: dict[str, Any] | None = None,
     default_prompt: str | None = None,
     norm_stats: dict[str, transforms.NormStats] | None = None,
+    print_raw_fast_text: bool = False,
 ) -> _policy.Policy:
     """Create a policy from a trained checkpoint.
 
@@ -73,6 +74,11 @@ def create_trained_policy(
             *data_config.model_transforms.inputs,
         ],
         output_transforms=[
+            *(
+                [transforms.LogFASTTokens(transforms._tokenizer.FASTTokenizer(train_config.model.max_token_len))]
+                if print_raw_fast_text and train_config.model.model_type == _model.ModelType.PI0_FAST
+                else []
+            ),
             *data_config.model_transforms.outputs,
             transforms.Unnormalize(norm_stats, use_quantiles=data_config.use_quantile_norm),
             *data_config.data_transforms.outputs,

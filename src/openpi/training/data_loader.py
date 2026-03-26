@@ -12,6 +12,8 @@ import torch
 
 import openpi.models.model as _model
 import openpi.training.config as _config
+import openpi.training.libero as libero_utils
+import openpi.training.libero_logic as libero_logic
 import openpi.transforms as _transforms
 
 T_co = TypeVar("T_co", covariant=True)
@@ -90,8 +92,22 @@ def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseMod
         return FakeDataset(model_config, num_samples=1024)
 
     dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id, local_files_only=data_config.local_files_only)
+    episode_indices = None
+    if data_config.task_filters:
+        available_task_names = {task.casefold(): task for task in dataset_meta.tasks.values()}
+        missing_tasks = sorted(task for task in data_config.task_filters if task.casefold() not in available_task_names)
+        if missing_tasks:
+            available = "\n".join(f"  - {task}" for task in dataset_meta.tasks.values())
+            raise ValueError(
+                f"Task filters not found in dataset {repo_id}: {missing_tasks}\nAvailable tasks:\n{available}"
+            )
+        episode_indices = libero_utils.select_episode_indices(dataset_meta.episodes, data_config.task_filters)
+        if not episode_indices:
+            raise ValueError(f"No episodes matched the requested task filters for dataset {repo_id}.")
+
     dataset = lerobot_dataset.LeRobotDataset(
         data_config.repo_id,
+        episodes=episode_indices,
         delta_timestamps={
             key: [t / dataset_meta.fps for t in range(model_config.action_horizon)]
             for key in data_config.action_sequence_keys
@@ -99,8 +115,17 @@ def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseMod
         local_files_only=data_config.local_files_only,
     )
 
-    if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+    task_prompts = None
+    if data_config.task_description_path is not None:
+        task_prompts = libero_logic.build_task_prompt_map_from_dataset_tasks(
+            dataset_meta.tasks,
+            data_config.task_description_path,
+        )
+    elif data_config.prompt_from_task:
+        task_prompts = dataset_meta.tasks
+
+    if task_prompts is not None:
+        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(task_prompts)])
 
     return dataset
 
