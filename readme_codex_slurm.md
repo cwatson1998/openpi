@@ -87,6 +87,7 @@ chmod 700 /scratch/$USER
 Notes:
 
 - use `/scratch/$USER` for temp files and caches
+- for large Hugging Face model or dataset downloads, prefer `/mnt/kostas-graid/datasets/ccwatson/huggingface` instead of `/home`; set `HF_HOME` and `HUGGINGFACE_HUB_CACHE` there if you want those downloads to persist in the faster shared dataset area
 - do not assume scratch is backed up
 - do not keep irreplaceable results only in scratch
 - for short-lived local temp on an interactive job, node-local `$TMPDIR` may be even better if Slurm provides it
@@ -382,6 +383,14 @@ exec codex "$@"
 ```
 
 For heavier sessions:
+
+If you expect large Hugging Face downloads, move those off `/home` and point them at `/mnt/kostas-graid/datasets/ccwatson/huggingface` instead of the scratch example above:
+
+```bash
+mkdir -p /mnt/kostas-graid/datasets/ccwatson/huggingface
+export HF_HOME=/mnt/kostas-graid/datasets/ccwatson/huggingface
+export HUGGINGFACE_HUB_CACHE=/mnt/kostas-graid/datasets/ccwatson/huggingface/hub
+```
 
 ```bash
 srun --pty \
