@@ -182,10 +182,81 @@ uv run scripts/serve_policy.py --port=8000 policy:checkpoint \
   --policy.dir=checkpoints/pi0_fast_libero_object_train7_low_mem_finetune/object_train7_lora/25000
 ```
 
+Example: logic-prompt LoRA checkpoint (`object_train7_lora_logic`):
+
+```bash
+uv run scripts/serve_policy.py --port=8000 policy:checkpoint \
+  --policy.config=pi0_fast_libero_object_train7_low_mem_finetune \
+  --policy.dir=checkpoints/pi0_fast_libero_object_train7_low_mem_finetune/object_train7_lora_logic/29999
+```
+
 Rule of thumb:
 
 - full fine-tune checkpoints use `pi0_fast_libero_object_train7`
-- LoRA checkpoints use `pi0_fast_libero_object_train7_low_mem_finetune`
+- LoRA checkpoints use `pi0_fast_libero_object_train7_low_mem_finetune` regardless of the experiment name (`object_train7_lora`, `object_train7_lora_logic`, etc.)
+
+## Overriding Task Prompts for Logic-Prompt Checkpoints
+
+The `object_train7_lora_logic` checkpoint was fine-tuned with structured BDDL-style prompts instead of LIBERO's default natural language. To evaluate it correctly you must supply those same logic prompts at inference time.
+
+Pass `--args.prompt-override-file` pointing at a JSON file that maps each task's natural-language instruction to the logic prompt that was used during training. The evaluator looks up the LIBERO natural-language string for each task and replaces it with the override; any task that has no entry in the file keeps its default natural-language prompt.
+
+The mapping file for the 7 training tasks lives at `data/libero/libero_object_train7_logic_descriptions.json`. Its format is:
+
+```json
+{
+  "tasks": [
+    {
+      "task_instruction": "pick up the alphabet soup and place it in the basket",
+      "logic_task_description": "(And (In alphabet_soup basket))"
+    },
+    ...
+  ]
+}
+```
+
+Two prompt-override files are available:
+
+| File | Coverage |
+|------|----------|
+| `data/libero/libero_object_train7_logic_descriptions.json` | 7 training tasks only |
+| `data/libero/libero_object_all10_logic_descriptions.json` | All 10 tasks |
+
+### Eval all 10 `libero_object` tasks with logic prompts
+
+```bash
+python examples/libero/main.py \
+  --args.task-suite-name libero_object \
+  --args.host 127.0.0.1 \
+  --args.port 8000 \
+  --args.prompt-override-file data/libero/libero_object_all10_logic_descriptions.json
+```
+
+### Eval only the 7 training tasks with logic prompts
+
+```bash
+python examples/libero/main.py \
+  --args.task-suite-name libero_object \
+  --args.host 127.0.0.1 \
+  --args.port 8000 \
+  --args.task-split-file data/libero/object_7train_3test.json \
+  --args.task-split train \
+  --args.prompt-override-file data/libero/libero_object_train7_logic_descriptions.json
+```
+
+### Eval only the 3 held-out tasks with logic prompts
+
+```bash
+python examples/libero/main.py \
+  --args.task-suite-name libero_object \
+  --args.host 127.0.0.1 \
+  --args.port 8000 \
+  --args.task-split-file data/libero/object_7train_3test.json \
+  --args.task-split eval \
+  --args.prompt-override-file data/libero/libero_object_all10_logic_descriptions.json
+```
+
+The `task_instruction` value in the override file must match `task.language` exactly as LIBERO stores it (lowercase natural language, e.g. `"pick up the milk and place it in the basket"`).
 
 ## Running Different Task Suites
 
@@ -242,25 +313,50 @@ python examples/libero/main.py \
   --args.task-names "pick up the milk and place it in the basket"
 ```
 
-Change the rollout video output directory:
+Override the auto-generated output directory:
 
 ```bash
 python examples/libero/main.py \
   --args.task-suite-name libero_object \
   --args.host 127.0.0.1 \
   --args.port 8000 \
-  --args.video-out-path data/libero/videos_object_eval
+  --args.video-out-path data/libero/my_named_run
 ```
 
 ## Where Results Show Up
 
-By default:
+By default each run gets its own timestamped directory so nothing is ever clobbered:
 
-- rollout videos are written under `data/libero/videos`
-- success metrics are printed to the eval terminal
+```
+data/libero/runs/<YYYYMMDD_HHMMSS>_<suite>_<logic>/
+  results.json
+  rollout_<task>_success.mp4
+  rollout_<task>_failure.mp4
+  ...
+```
+
+Examples:
+
+```
+data/libero/runs/20260330_142301_libero_object/          # natural-language prompts
+data/libero/runs/20260330_143015_libero_object_logic/    # logic prompts
+```
+
+The directory is printed at startup as `Run output directory: ...` so you always know where to look.
+
+To write to a specific path instead, pass `--args.video-out-path`:
+
+```bash
+python examples/libero/main.py \
+  --args.task-suite-name libero_object \
+  --args.host 127.0.0.1 \
+  --args.port 8000 \
+  --args.video-out-path data/libero/my_named_run
+```
 
 Useful lines to watch in the eval output:
 
+- `Run output directory: ...`
 - `Task: ...`
 - `# episodes completed so far: ...`
 - `# successes: ...`
@@ -316,7 +412,9 @@ If you change `--policy.dir`, make sure `--policy.config` still matches that che
 
 ## Minimal Copy-Paste Version
 
-### Window 1
+### Standard LoRA checkpoint (`object_train7_lora`)
+
+Window 1:
 
 ```bash
 cd /home/christopher/Documents/openpi-finetune/openpi
@@ -324,7 +422,7 @@ export USE_TF=0
 uv run scripts/serve_policy.py --port=8000 policy:checkpoint --policy.config=pi0_fast_libero_object_train7_low_mem_finetune --policy.dir=checkpoints/pi0_fast_libero_object_train7_low_mem_finetune/object_train7_lora/29999
 ```
 
-### Window 2
+Window 2:
 
 ```bash
 cd /home/christopher/Documents/openpi-finetune/openpi
@@ -333,4 +431,25 @@ export PYTHONPATH=/home/christopher/Documents/openpi-finetune/openpi/src:/home/c
 export LIBERO_CONFIG_PATH=/home/christopher/Documents/openpi-finetune/openpi/.cache/libero-openpi
 export USE_TF=0
 python examples/libero/main.py --args.task-suite-name libero_object --args.host 127.0.0.1 --args.port 8000 --args.num-trials-per-task 2
+```
+
+### Logic-prompt LoRA checkpoint (`object_train7_lora_logic`)
+
+Window 1:
+
+```bash
+cd /home/christopher/Documents/openpi-finetune/openpi
+export USE_TF=0
+uv run scripts/serve_policy.py --port=8000 policy:checkpoint --policy.config=pi0_fast_libero_object_train7_low_mem_finetune --policy.dir=checkpoints/pi0_fast_libero_object_train7_low_mem_finetune/object_train7_lora_logic/29999
+```
+
+Window 2:
+
+```bash
+cd /home/christopher/Documents/openpi-finetune/openpi
+source examples/libero/.venv/bin/activate
+export PYTHONPATH=/home/christopher/Documents/openpi-finetune/openpi/src:/home/christopher/Documents/openpi-finetune/openpi/packages/openpi-client/src:/home/christopher/Documents/openpi-finetune/openpi/third_party/libero
+export LIBERO_CONFIG_PATH=/home/christopher/Documents/openpi-finetune/openpi/.cache/libero-openpi
+export USE_TF=0
+python examples/libero/main.py --args.task-suite-name libero_object --args.host 127.0.0.1 --args.port 8000 --args.num-trials-per-task 2 --args.prompt-override-file data/libero/libero_object_all10_logic_descriptions.json
 ```

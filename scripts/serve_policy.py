@@ -8,6 +8,7 @@ import tyro
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 from openpi.serving import websocket_policy_server
+from openpi.training import checkpoints as _checkpoints
 from openpi.training import config as _config
 
 
@@ -28,6 +29,9 @@ class Checkpoint:
     config: str
     # Checkpoint directory (e.g., "checkpoints/pi0_aloha_sim/exp/10000").
     dir: str
+    # Optional directory containing normalization stats assets. If not provided, stats are loaded from the
+    # checkpoint's own assets directory.
+    norm_stats_dir: str | None = None
 
 
 @dataclasses.dataclass
@@ -91,10 +95,18 @@ def create_policy(args: Args) -> _policy.Policy:
     """Create a policy from the given arguments."""
     match args.policy:
         case Checkpoint():
+            train_config = _config.get_config(args.policy.config)
+            norm_stats = None
+            if args.policy.norm_stats_dir is not None:
+                data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
+                if data_config.asset_id is None:
+                    raise ValueError("Asset id is required to load norm stats from --policy.norm-stats-dir.")
+                norm_stats = _checkpoints.load_norm_stats(args.policy.norm_stats_dir, data_config.asset_id)
             return _policy_config.create_trained_policy(
-                _config.get_config(args.policy.config),
+                train_config,
                 args.policy.dir,
                 default_prompt=args.default_prompt,
+                norm_stats=norm_stats,
                 print_raw_fast_text=args.print_raw_fast_text,
             )
         case Default():

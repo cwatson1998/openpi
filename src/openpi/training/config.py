@@ -642,6 +642,21 @@ _CONFIGS = [
         ).get_freeze_filter(),
         ema_decay=None,
     ),
+    TrainConfig(
+        name="pi0_fast_libero_10_logic",
+        model=pi0_fast.Pi0FASTConfig(action_dim=7, action_horizon=10, max_token_len=180),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            task_suite_name="libero_10",
+            task_description_path="data/libero/libero_10_logic_descriptions.json",
+            base_config=DataConfig(
+                local_files_only=False,
+                prompt_from_task=True,
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=30_000,
+    ),
     #
     # Fine-tuning Aloha configs.
     #

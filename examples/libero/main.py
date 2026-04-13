@@ -48,8 +48,20 @@ class Args:
     #################################################################################################################
     # Utils
     #################################################################################################################
-    video_out_path: str = "data/libero/videos"  # Path to save videos
+    # Output directory for rollout videos and results.json.
+    # Defaults to data/libero/runs/<YYYYMMDD_HHMMSS>_<task_suite_name> so each run
+    # gets its own directory and nothing is ever clobbered.
+    # Pass an explicit path to override (e.g. --args.video-out-path data/libero/my_run).
+    video_out_path: str | None = None
     results_out_path: str | None = None  # Optional path to save aggregated results JSON
+
+    # Optional JSON file that maps task_instruction -> logic_task_description.
+    # Expected format matches libero_object_train7_logic_descriptions.json:
+    #   {"tasks": [{"task_instruction": "...", "logic_task_description": "..."}, ...]}
+    # When provided, any task whose natural-language instruction matches an entry will
+    # have its prompt replaced with the corresponding logic_task_description.
+    # Tasks with no entry in the file keep their default natural-language prompt.
+    prompt_override_file: str | None = None
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -79,8 +91,27 @@ def eval_libero(args: Args) -> None:
     if not selected_task_ids:
         raise ValueError("No LIBERO evaluation tasks matched the requested task filter.")
 
-    video_out_path = pathlib.Path(args.video_out_path)
+    prompt_overrides: dict[str, str] = {}
+    if args.prompt_override_file:
+        with open(args.prompt_override_file) as f:
+            override_data = json.load(f)
+        prompt_overrides = {
+            entry["task_instruction"]: entry["logic_task_description"]
+            for entry in override_data["tasks"]
+        }
+        logging.info(f"Loaded {len(prompt_overrides)} prompt overrides from {args.prompt_override_file}")
+
+    if args.video_out_path:
+        video_out_path = pathlib.Path(args.video_out_path)
+    else:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        run_tag = args.task_suite_name
+        if args.prompt_override_file:
+            run_tag += "_logic"
+        video_out_path = pathlib.Path("data/libero/runs") / f"{timestamp}_{run_tag}"
     video_out_path.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Run output directory: {video_out_path}")
+
     results_out_path = pathlib.Path(args.results_out_path) if args.results_out_path else video_out_path / "results.json"
     results_out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -111,6 +142,7 @@ def eval_libero(args: Args) -> None:
 
         # Initialize LIBERO environment and task description
         env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed)
+        task_description = prompt_overrides.get(task_description, task_description)
 
         # Start episodes
         task_episodes, task_successes = 0, 0
