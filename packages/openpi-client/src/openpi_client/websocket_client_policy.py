@@ -8,6 +8,11 @@ from typing_extensions import override
 from openpi_client import base_policy as _base_policy
 from openpi_client import msgpack_numpy
 
+WEBSOCKET_OPEN_TIMEOUT_SECONDS = 30.0
+WEBSOCKET_CLOSE_TIMEOUT_SECONDS = 30.0
+WEBSOCKET_PING_INTERVAL_SECONDS = 30.0
+WEBSOCKET_PING_TIMEOUT_SECONDS = 300.0
+
 
 class WebsocketClientPolicy(_base_policy.BasePolicy):
     """Implements the Policy interface by communicating with a server over websocket.
@@ -27,7 +32,15 @@ class WebsocketClientPolicy(_base_policy.BasePolicy):
         logging.info(f"Waiting for server at {self._uri}...")
         while True:
             try:
-                conn = websockets.sync.client.connect(self._uri, compression=None, max_size=None)
+                conn = websockets.sync.client.connect(
+                    self._uri,
+                    compression=None,
+                    open_timeout=WEBSOCKET_OPEN_TIMEOUT_SECONDS,
+                    close_timeout=WEBSOCKET_CLOSE_TIMEOUT_SECONDS,
+                    ping_interval=WEBSOCKET_PING_INTERVAL_SECONDS,
+                    ping_timeout=WEBSOCKET_PING_TIMEOUT_SECONDS,
+                    max_size=None,
+                )
                 metadata = msgpack_numpy.unpackb(conn.recv())
                 return conn, metadata
             except ConnectionRefusedError:

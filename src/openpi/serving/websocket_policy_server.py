@@ -7,6 +7,10 @@ from openpi_client import msgpack_numpy
 import websockets.asyncio.server
 import websockets.frames
 
+WEBSOCKET_PING_INTERVAL_SECONDS = 30.0
+WEBSOCKET_PING_TIMEOUT_SECONDS = 300.0
+WEBSOCKET_CLOSE_TIMEOUT_SECONDS = 30.0
+
 
 class WebsocketPolicyServer:
     """Serves a policy using the websocket protocol. See websocket_client_policy.py for a client implementation.
@@ -36,6 +40,9 @@ class WebsocketPolicyServer:
             self._host,
             self._port,
             compression=None,
+            ping_interval=WEBSOCKET_PING_INTERVAL_SECONDS,
+            ping_timeout=WEBSOCKET_PING_TIMEOUT_SECONDS,
+            close_timeout=WEBSOCKET_CLOSE_TIMEOUT_SECONDS,
             max_size=None,
         ) as server:
             await server.serve_forever()
@@ -49,7 +56,10 @@ class WebsocketPolicyServer:
         while True:
             try:
                 obs = msgpack_numpy.unpackb(await websocket.recv())
-                action = self._policy.infer(obs)
+                # Policy inference may trigger long JAX/XLA compilation or run expensive decode
+                # steps. Run it in a worker thread so the websocket event loop can continue
+                # serving keepalive pings instead of timing the connection out mid-inference.
+                action = await asyncio.to_thread(self._policy.infer, obs)
                 await websocket.send(packer.pack(action))
             except websockets.ConnectionClosed:
                 logging.info(f"Connection from {websocket.remote_address} closed")
