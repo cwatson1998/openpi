@@ -20,14 +20,24 @@ cd "${SLURM_SUBMIT_DIR:-/home/chriswatson/openpi-finetune/openpi}"
 export USE_TF=0
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.9}"
 export TOKENIZERS_PARALLELISM=false
-export WANDB_MODE="${WANDB_MODE:-disabled}"
+export WANDB_MODE="${WANDB_MODE:-online}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi0_fast_libero_10_logic}"
 EXP_NAME="${EXP_NAME:-libero10_logic_full}"
+WANDB_PROJECT="${WANDB_PROJECT:-libero}"
+WANDB_GROUP="${WANDB_GROUP:-}"
+WANDB_TAGS="${WANDB_TAGS:-libero,train,libero_10,logic_prompts,full_finetune}"
 FSDP_DEVICES="${FSDP_DEVICES:-2}"
+BATCH_SIZE="${BATCH_SIZE:-8}"
+WEIGHT_LOADER_PARAMS_PATH="${WEIGHT_LOADER_PARAMS_PATH:-}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-200}"
 KEEP_PERIOD="${KEEP_PERIOD:-1000}"
+
+export OPENPI_WANDB_TAGS="${WANDB_TAGS}"
+if [[ -n "${WANDB_GROUP}" ]]; then
+  export OPENPI_WANDB_GROUP="${WANDB_GROUP}"
+fi
 
 CHECKPOINT_DIR="checkpoints/${CONFIG_NAME}/${EXP_NAME}"
 TRAIN_PID=""
@@ -66,19 +76,33 @@ echo "[$(timestamp)] Starting full fine-tune"
 echo "[$(timestamp)] Config: ${CONFIG_NAME}"
 echo "[$(timestamp)] Experiment: ${EXP_NAME}"
 echo "[$(timestamp)] Checkpoints: ${CHECKPOINT_DIR}"
+echo "[$(timestamp)] W&B project: ${WANDB_PROJECT}"
+if [[ -n "${WANDB_GROUP}" ]]; then
+  echo "[$(timestamp)] W&B group: ${WANDB_GROUP}"
+fi
+echo "[$(timestamp)] W&B tags: ${WANDB_TAGS}"
 echo "[$(timestamp)] FSDP devices: ${FSDP_DEVICES}"
+echo "[$(timestamp)] Batch size: ${BATCH_SIZE}"
+if [[ -n "${WEIGHT_LOADER_PARAMS_PATH}" ]]; then
+  echo "[$(timestamp)] Weight loader: ${WEIGHT_LOADER_PARAMS_PATH}"
+fi
 echo "[$(timestamp)] Resume mode enabled"
 
 CMD=(
   uv run --frozen --no-dev scripts/train.py "${CONFIG_NAME}"
   --exp-name="${EXP_NAME}"
+  --project-name="${WANDB_PROJECT}"
   --fsdp-devices="${FSDP_DEVICES}"
+  --batch-size="${BATCH_SIZE}"
   --resume
   --save-interval="${SAVE_INTERVAL}"
   --keep-period="${KEEP_PERIOD}"
   --num-workers="${NUM_WORKERS}"
-  --no-wandb-enabled
 )
+
+if [[ -n "${WEIGHT_LOADER_PARAMS_PATH}" ]]; then
+  CMD+=(--weight-loader.params-path="${WEIGHT_LOADER_PARAMS_PATH}")
+fi
 
 echo "[$(timestamp)] Command: ${CMD[*]}"
 "${CMD[@]}" &

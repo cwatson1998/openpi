@@ -1,6 +1,7 @@
 import dataclasses
 import functools
 import logging
+import os
 import platform
 from typing import Any
 
@@ -46,23 +47,60 @@ def init_logging():
     logger.handlers[0].setFormatter(formatter)
 
 
+def _extra_wandb_tags(config: _config.TrainConfig) -> list[str]:
+    tags = list(config.wandb_tags)
+    raw = os.environ.get("OPENPI_WANDB_TAGS", "").strip()
+    if raw:
+        tags.extend(tag.strip() for tag in raw.split(",") if tag.strip())
+
+    deduped: list[str] = []
+    seen = set()
+    for tag in tags:
+        if tag not in seen:
+            deduped.append(tag)
+            seen.add(tag)
+    return deduped
+
+
+def _wandb_group(config: _config.TrainConfig) -> str | None:
+    if config.wandb_group is not None:
+        return config.wandb_group
+    raw = os.environ.get("OPENPI_WANDB_GROUP", "").strip()
+    return raw or None
+
+
 def init_wandb(config: _config.TrainConfig, *, resuming: bool, log_code: bool = False, enabled: bool = True):
     if not enabled:
         wandb.init(mode="disabled")
         return
 
+    tags = _extra_wandb_tags(config)
+    group = _wandb_group(config)
     ckpt_dir = config.checkpoint_dir
     if not ckpt_dir.exists():
         raise FileNotFoundError(f"Checkpoint directory {ckpt_dir} does not exist.")
     if resuming:
-        run_id = (ckpt_dir / "wandb_id.txt").read_text().strip()
-        wandb.init(id=run_id, resume="must", project=config.project_name)
+        init_kwargs = {
+            "id": (ckpt_dir / "wandb_id.txt").read_text().strip(),
+            "resume": "must",
+            "project": config.project_name,
+        }
+        if tags:
+            init_kwargs["tags"] = tags
+        if group is not None:
+            init_kwargs["group"] = group
+        wandb.init(**init_kwargs)
     else:
-        wandb.init(
-            name=config.exp_name,
-            config=dataclasses.asdict(config),
-            project=config.project_name,
-        )
+        init_kwargs = {
+            "name": config.exp_name,
+            "config": dataclasses.asdict(config),
+            "project": config.project_name,
+        }
+        if tags:
+            init_kwargs["tags"] = tags
+        if group is not None:
+            init_kwargs["group"] = group
+        wandb.init(**init_kwargs)
         (ckpt_dir / "wandb_id.txt").write_text(wandb.run.id)
 
     if log_code:

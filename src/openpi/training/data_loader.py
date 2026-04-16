@@ -19,6 +19,35 @@ import openpi.transforms as _transforms
 T_co = TypeVar("T_co", covariant=True)
 
 
+def _normalize_task_name(task_name: str) -> str:
+    return " ".join(task_name.strip().replace("_", " ").split()).casefold()
+
+
+def _select_task_prompts(
+    dataset_tasks: dict[int, str],
+    *,
+    task_filters: Sequence[str],
+    task_description_path: str | None,
+    prompt_from_task: bool,
+) -> dict[int, str] | None:
+    selected_tasks = dataset_tasks
+    if task_filters:
+        allowed_tasks = {_normalize_task_name(task) for task in task_filters}
+        selected_tasks = {
+            int(task_index): task_instruction
+            for task_index, task_instruction in dataset_tasks.items()
+            if _normalize_task_name(task_instruction) in allowed_tasks
+        }
+
+    if task_description_path is not None:
+        return libero_logic.build_task_prompt_map_from_dataset_tasks(selected_tasks, task_description_path)
+
+    if prompt_from_task:
+        return selected_tasks
+
+    return None
+
+
 class Dataset(Protocol[T_co]):
     """Interface for a dataset with random access."""
 
@@ -115,14 +144,12 @@ def create_dataset(data_config: _config.DataConfig, model_config: _model.BaseMod
         local_files_only=data_config.local_files_only,
     )
 
-    task_prompts = None
-    if data_config.task_description_path is not None:
-        task_prompts = libero_logic.build_task_prompt_map_from_dataset_tasks(
-            dataset_meta.tasks,
-            data_config.task_description_path,
-        )
-    elif data_config.prompt_from_task:
-        task_prompts = dataset_meta.tasks
+    task_prompts = _select_task_prompts(
+        dataset_meta.tasks,
+        task_filters=data_config.task_filters,
+        task_description_path=data_config.task_description_path,
+        prompt_from_task=data_config.prompt_from_task,
+    )
 
     if task_prompts is not None:
         dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(task_prompts)])

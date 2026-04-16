@@ -22,8 +22,8 @@ import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
-import openpi.training.optimizer as _optimizer
 import openpi.training.libero as libero_utils
+import openpi.training.optimizer as _optimizer
 import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 
@@ -408,6 +408,10 @@ class TrainConfig:
 
     # If true, will enable wandb logging.
     wandb_enabled: bool = True
+    # Optional W&B tags for the run.
+    wandb_tags: tuple[str, ...] = ()
+    # Optional W&B group for the run.
+    wandb_group: str | None = None
 
     # Used to pass metadata to the policy server.
     policy_metadata: dict[str, Any] | None = None
