@@ -60,6 +60,11 @@ dev = [
 openpi-client = { workspace = true }
 lerobot = { git = "https://github.com/huggingface/lerobot", rev = "6674e368249472c91382eb54bb8501c94c7f0c56" }
 
+[tool.uv]
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_full_version >= '3.11' and python_full_version < '3.12'"
+]
+
 [tool.uv.workspace]
 members = ["packages/*"]
 
