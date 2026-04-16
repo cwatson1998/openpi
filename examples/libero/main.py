@@ -1,10 +1,11 @@
 import collections
 import dataclasses
+from datetime import UTC
+from datetime import datetime
 import json
 import logging
 import math
 import pathlib
-from datetime import datetime, timezone
 
 import imageio
 from libero.libero import benchmark
@@ -15,6 +16,7 @@ from openpi_client import image_tools
 from openpi_client import websocket_client_policy as _websocket_client_policy
 import tqdm
 import tyro
+import wandb
 
 from openpi.training import libero as libero_utils
 
@@ -63,12 +65,70 @@ class Args:
     # Tasks with no entry in the file keep their default natural-language prompt.
     prompt_override_file: str | None = None
 
+    #################################################################################################################
+    # W&B
+    #################################################################################################################
+    wandb_enabled: bool = False
+    wandb_project: str = "libero"
+    wandb_name: str | None = None
+    wandb_group: str | None = None
+    wandb_tags_csv: str = ""
+    policy_config: str | None = None
+    checkpoint_dir: str | None = None
+    train_run_name: str | None = None
+
     seed: int = 7  # Random Seed (for reproducibility)
+
+
+def _parse_tags(csv_value: str) -> list[str]:
+    return [tag.strip() for tag in csv_value.split(",") if tag.strip()]
+
+
+def _default_eval_wandb_name(args: Args) -> str:
+    checkpoint_name = pathlib.Path(args.checkpoint_dir).name if args.checkpoint_dir else "unknown_ckpt"
+    train_run_name = args.train_run_name or (
+        pathlib.Path(args.checkpoint_dir).parent.name if args.checkpoint_dir else "unknown_run"
+    )
+    return f"eval_{train_run_name}_ckpt_{checkpoint_name}_{args.task_suite_name}"
+
+
+def _init_wandb(args: Args) -> None:
+    if not args.wandb_enabled:
+        wandb.init(mode="disabled")
+        return
+
+    init_kwargs = {
+        "project": args.wandb_project,
+        "name": args.wandb_name or _default_eval_wandb_name(args),
+        "job_type": "eval",
+        "config": {
+            "task_suite_name": args.task_suite_name,
+            "task_indices": list(args.task_indices),
+            "task_names": list(args.task_names),
+            "task_split_file": args.task_split_file,
+            "task_split": args.task_split,
+            "num_trials_per_task": args.num_trials_per_task,
+            "replan_steps": args.replan_steps,
+            "resize_size": args.resize_size,
+            "seed": args.seed,
+            "prompt_override_file": args.prompt_override_file,
+            "policy_config": args.policy_config,
+            "checkpoint_dir": args.checkpoint_dir,
+            "train_run_name": args.train_run_name,
+        },
+    }
+    tags = _parse_tags(args.wandb_tags_csv)
+    if tags:
+        init_kwargs["tags"] = tags
+    if args.wandb_group is not None:
+        init_kwargs["group"] = args.wandb_group
+    wandb.init(**init_kwargs)
 
 
 def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
+    _init_wandb(args)
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -93,7 +153,7 @@ def eval_libero(args: Args) -> None:
 
     prompt_overrides: dict[str, str] = {}
     if args.prompt_override_file:
-        with open(args.prompt_override_file) as f:
+        with pathlib.Path(args.prompt_override_file).open() as f:
             override_data = json.load(f)
         prompt_overrides = {
             entry["task_instruction"]: entry["logic_task_description"]
@@ -104,7 +164,7 @@ def eval_libero(args: Args) -> None:
     if args.video_out_path:
         video_out_path = pathlib.Path(args.video_out_path)
     else:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         run_tag = args.task_suite_name
         if args.prompt_override_file:
             run_tag += "_logic"
@@ -251,6 +311,16 @@ def eval_libero(args: Args) -> None:
         # Log final results
         logging.info(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         logging.info(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+        wandb.log(
+            {
+                "eval/task_id": task_id,
+                "eval/task_success_rate": float(task_successes) / float(task_episodes),
+                "eval/total_success_rate_running": float(total_successes) / float(total_episodes),
+                "eval/tasks_completed": len(task_results) + 1,
+                "eval/episodes_completed": total_episodes,
+            },
+            step=len(task_results) + 1,
+        )
         task_results.append(
             {
                 "task_id": task_id,
@@ -266,7 +336,7 @@ def eval_libero(args: Args) -> None:
     logging.info(f"Total success rate: {total_success_rate}")
     logging.info(f"Total episodes: {total_episodes}")
     results = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "task_suite_name": args.task_suite_name,
         "task_split_file": args.task_split_file,
         "task_split": args.task_split,
@@ -287,6 +357,20 @@ def eval_libero(args: Args) -> None:
     }
     results_out_path.write_text(json.dumps(results, indent=2) + "\n")
     logging.info(f"Saved results JSON to {results_out_path}")
+    if wandb.run is not None:
+        wandb.summary["eval/total_success_rate"] = total_success_rate
+        wandb.summary["eval/total_successes"] = total_successes
+        wandb.summary["eval/total_episodes"] = total_episodes
+        wandb.summary["eval/results_out_path"] = str(results_out_path)
+        wandb.summary["eval/video_out_path"] = str(video_out_path)
+        for task_result in task_results:
+            task_slug = task_result["task_description"].replace(" ", "_")
+            wandb.summary[f"eval/task_success_rate/{task_slug}"] = task_result["success_rate"]
+
+        artifact = wandb.Artifact(f"{wandb.run.id}-libero-eval-results", type="libero-eval-results")
+        artifact.add_file(str(results_out_path), name="results.json")
+        wandb.log_artifact(artifact)
+        wandb.finish()
 
 
 def _get_libero_env(task, resolution, seed):

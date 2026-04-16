@@ -143,6 +143,30 @@ if [[ ! -x "$SERVER_VENV/bin/python" ]]; then
   exit 1
 fi
 
+libero_env_ready() {
+  if [[ ! -x "$LIBERO_VENV/bin/python" ]]; then
+    return 1
+  fi
+
+  "$LIBERO_VENV/bin/python" - <<'PY' >/dev/null 2>&1
+import importlib
+
+modules = [
+    "imageio",
+    "libero.libero.envs",
+    "matplotlib",
+    "libero.libero",
+    "mujoco",
+    "openpi_client",
+    "robosuite",
+    "tyro",
+    "wandb",
+]
+for module in modules:
+    importlib.import_module(module)
+PY
+}
+
 case "$SETUP_ENV" in
   auto|always|never)
     ;;
@@ -162,13 +186,12 @@ assets: $ROOT_DIR/third_party/libero/libero/libero/assets
 EOF
 
 SETUP_COMMANDS=()
-if [[ "$SETUP_ENV" == "always" ]] || [[ "$SETUP_ENV" == "auto" && ! -x "$LIBERO_VENV/bin/python" ]]; then
-  SETUP_COMMANDS+=("uv venv --python 3.10 \"$LIBERO_VENV\"")
+if [[ "$SETUP_ENV" == "always" ]] || { [[ "$SETUP_ENV" == "auto" ]] && ! libero_env_ready; }; then
+  if [[ ! -x "$LIBERO_VENV/bin/python" ]]; then
+    SETUP_COMMANDS+=("uv venv --python 3.10 \"$LIBERO_VENV\"")
+  fi
   SETUP_COMMANDS+=("source \"$LIBERO_VENV/bin/activate\"")
-  SETUP_COMMANDS+=("uv pip install imageio tqdm tyro mujoco==3.2.3 robosuite==1.4.1 opencv-python bddl==1.0.1 torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113 --index-strategy=unsafe-best-match")
-  SETUP_COMMANDS+=("uv pip install \"numpy<2\"")
-  SETUP_COMMANDS+=("uv pip install future easydict cloudpickle gym==0.25.2 hydra-core==1.2.0")
-  SETUP_COMMANDS+=("uv pip install matplotlib==3.5.3 wandb==0.13.1 transformers==4.21.1 robomimic==0.2.0 einops==0.4.1 thop==0.1.1-2209072238")
+  SETUP_COMMANDS+=("uv pip install -r examples/libero/requirements.in --extra-index-url https://download.pytorch.org/whl/cu113 --index-strategy=unsafe-best-match")
   SETUP_COMMANDS+=("uv pip install -e packages/openpi-client")
   SETUP_COMMANDS+=("uv pip install -e third_party/libero")
 fi
