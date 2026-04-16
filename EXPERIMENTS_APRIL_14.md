@@ -21,13 +21,13 @@ The norm-stats prerequisite for the logic runs was generated successfully earlie
 
 - `444305`: `openpi_libero10_logic_normstats`
 - status: `COMPLETED`
-- output file: [assets/pi0_fast_libero_10_logic/physical-intelligence/libero/norm_stats.json](/home/chriswatson/openpi-finetune/openpi/assets/pi0_fast_libero_10_logic/physical-intelligence/libero/norm_stats.json:1)
+- output file: `assets/pi0_fast_libero_10_logic/physical-intelligence/libero/norm_stats.json`
 
 There is also a new Slurm-based LIBERO eval path now:
 
-- batch script: [examples/libero/eval_checkpoint.slurm](/home/chriswatson/openpi-finetune/openpi/examples/libero/eval_checkpoint.slurm:1)
-- submit helper: [scripts/submit_libero_eval_slurm.sh](/home/chriswatson/openpi-finetune/openpi/scripts/submit_libero_eval_slurm.sh:1)
-- docs: [docs/libero_eval_slurm.md](/home/chriswatson/openpi-finetune/openpi/docs/libero_eval_slurm.md:1)
+- batch script: [examples/libero/eval_checkpoint.slurm](examples/libero/eval_checkpoint.slurm)
+- submit helper: [scripts/submit_libero_eval_slurm.sh](scripts/submit_libero_eval_slurm.sh)
+- docs: [docs/libero_eval_slurm.md](docs/libero_eval_slurm.md)
 
 ## Final Training Runs
 
@@ -35,17 +35,17 @@ There is also a new Slurm-based LIBERO eval path now:
 
 - Job name: `openpi_libero10_logic_full`
 - Config: `pi0_fast_libero_10_logic`
-- Prompt type: logic task descriptions from [data/libero/libero_10_logic_descriptions.json](/home/chriswatson/openpi-finetune/openpi/data/libero/libero_10_logic_descriptions.json:1)
+- Prompt type: logic task descriptions from [data/libero/libero_10_logic_descriptions.json](data/libero/libero_10_logic_descriptions.json)
 - Weight init: base `pi0-fast`
 - Batch size: `8`
 - FSDP devices: `2`
 - Final node: `dj-a40-1.grasp.maas`
 - State: `COMPLETED`
 - Runtime: `01:26:26`
-- Checkpoint dir: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057:1)
-- Final checkpoint: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999:1)
+- Checkpoint dir: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057`
+- Final checkpoint: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999`
 - W&B: `https://wandb.ai/penn-pal/libero/runs/psiaujqp`
-- Log: [logs/slurm/openpi_libero10_logic_full-444315.out](/home/chriswatson/openpi-finetune/openpi/logs/slurm/openpi_libero10_logic_full-444315.out:1)
+- Log: `logs/slurm/openpi_libero10_logic_full-444315.out`
 
 Submit command used:
 
@@ -63,17 +63,17 @@ uv run --frozen --no-dev scripts/train.py pi0_fast_libero_10_logic --exp-name=li
 
 - Job name: `openpi_libero10_logic_full`
 - Config: `pi0_fast_libero_10_logic`
-- Prompt type: logic task descriptions from [data/libero/libero_10_logic_descriptions.json](/home/chriswatson/openpi-finetune/openpi/data/libero/libero_10_logic_descriptions.json:1)
+- Prompt type: logic task descriptions from [data/libero/libero_10_logic_descriptions.json](data/libero/libero_10_logic_descriptions.json)
 - Weight init: released fine-tuned LIBERO checkpoint via `s3://openpi-assets/checkpoints/pi0_fast_libero/params`
 - Batch size: `8`
 - FSDP devices: `2`
 - Final node: `dj-l40-0.grasp.maas`
 - State: `COMPLETED`
 - Runtime: `02:09:57`
-- Checkpoint dir: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205:1)
-- Final checkpoint: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999:1)
+- Checkpoint dir: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205`
+- Final checkpoint: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999`
 - W&B: `https://wandb.ai/penn-pal/libero/runs/p4gyv61w`
-- Log: [logs/slurm/openpi_libero10_logic_full-444316.out](/home/chriswatson/openpi-finetune/openpi/logs/slurm/openpi_libero10_logic_full-444316.out:1)
+- Log: `logs/slurm/openpi_libero10_logic_full-444316.out`
 
 Submit command used:
 
@@ -101,12 +101,12 @@ uv run --frozen --no-dev scripts/train.py pi0_fast_libero_10_logic --exp-name=li
 - Requested node: `dj-a40-0.grasp.maas`
 - State: failed earlier
 - Checkpoint / experiment name: `libero10_default_ctrl_20260414_174400`
-- Log: [logs/slurm/openpi_libero10_default_ctrl-444318.out](/home/chriswatson/openpi-finetune/openpi/logs/slurm/openpi_libero10_default_ctrl-444318.out:1)
+- Log: `logs/slurm/openpi_libero10_default_ctrl-444318.out`
 
 Submit command used:
 
 ```bash
-sbatch --partition=dineshj-compute --qos=dj-med --job-name=openpi_libero10_default_ctrl --nodes=1 --ntasks=1 --cpus-per-task=8 --mem=128G --gres=gpu:4 --nodelist=dj-a40-0.grasp.maas --time=12:00:00 --output=logs/slurm/%x-%j.out --wrap 'cd /home/chriswatson/openpi-finetune/openpi && export USE_TF=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 && export TOKENIZERS_PARALLELISM=false && export WANDB_MODE=online && uv run --frozen --no-dev scripts/train.py pi0_fast_libero --exp-name=libero10_default_ctrl_20260414_174400 --project-name=libero --fsdp-devices=4 --batch-size=8 --resume --save-interval=200 --keep-period=1000 --num-workers=4 --data.task-suite-name=libero_10 --data.assets.assets-dir=./assets/pi0_fast_libero_10_logic'
+sbatch --partition=dineshj-compute --qos=dj-med --job-name=openpi_libero10_default_ctrl --nodes=1 --ntasks=1 --cpus-per-task=8 --mem=128G --gres=gpu:4 --nodelist=dj-a40-0.grasp.maas --time=12:00:00 --output=logs/slurm/%x-%j.out --wrap 'cd "$ROOT_DIR" && export USE_TF=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 && export TOKENIZERS_PARALLELISM=false && export WANDB_MODE=online && uv run --frozen --no-dev scripts/train.py pi0_fast_libero --exp-name=libero10_default_ctrl_20260414_174400 --project-name=libero --fsdp-devices=4 --batch-size=8 --resume --save-interval=200 --keep-period=1000 --num-workers=4 --data.task-suite-name=libero_10 --data.assets.assets-dir=./assets/pi0_fast_libero_10_logic'
 ```
 
 Notes:
@@ -136,23 +136,23 @@ The first round of eval launches (`445143`, `445144`) established that the Slurm
 
 The durable fix was in the websocket transport itself:
 
-- [src/openpi/serving/websocket_policy_server.py](/home/chriswatson/openpi-finetune/openpi/src/openpi/serving/websocket_policy_server.py:1) now runs `policy.infer()` in a worker thread via `asyncio.to_thread(...)` so long JAX/XLA inference does not block the asyncio loop from answering websocket keepalive traffic.
-- [packages/openpi-client/src/openpi_client/websocket_client_policy.py](/home/chriswatson/openpi-finetune/openpi/packages/openpi-client/src/openpi_client/websocket_client_policy.py:1) now uses more forgiving websocket open/close/ping timeouts.
+- [src/openpi/serving/websocket_policy_server.py](src/openpi/serving/websocket_policy_server.py) now runs `policy.infer()` in a worker thread via `asyncio.to_thread(...)` so long JAX/XLA inference does not block the asyncio loop from answering websocket keepalive traffic.
+- [packages/openpi-client/src/openpi_client/websocket_client_policy.py](packages/openpi-client/src/openpi_client/websocket_client_policy.py) now uses more forgiving websocket open/close/ping timeouts.
 
 Current replacement eval jobs:
 
 ### 445150
 
 - Source training run: `444315`
-- Checkpoint: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999:1)
+- Checkpoint: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_20260414_174057/29999`
 - Eval name: `libero10_logic_full_20260414_174057_29999_libero_10_wsfix`
 - State: `RUNNING`
 - Node: `dj-a40-0.grasp.maas`
 - W&B project: `libero`
 - W&B group: `libero10_logic_full_20260414_174057`
 - W&B: `https://wandb.ai/penn-pal/libero/runs/1ggpafl9`
-- Results dir: [data/libero/evals/libero10_logic_full_20260414_174057_29999_libero_10_wsfix](/home/chriswatson/openpi-finetune/openpi/data/libero/evals/libero10_logic_full_20260414_174057_29999_libero_10_wsfix:1)
-- Log: [logs/slurm/openpi_libero_eval-445150.out](/home/chriswatson/openpi-finetune/openpi/logs/slurm/openpi_libero_eval-445150.out:1)
+- Results dir: `data/libero/evals/libero10_logic_full_20260414_174057_29999_libero_10_wsfix`
+- Log: `logs/slurm/openpi_libero_eval-445150.out`
 
 Submit command used:
 
@@ -163,15 +163,15 @@ Submit command used:
 ### 445151
 
 - Source training run: `444316`
-- Checkpoint: [checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999](/home/chriswatson/openpi-finetune/openpi/checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999:1)
+- Checkpoint: `checkpoints/pi0_fast_libero_10_logic/libero10_logic_full_from_libero_ckpt_20260414_174205/29999`
 - Eval name: `libero10_logic_full_from_libero_ckpt_20260414_174205_29999_libero_10_wsfix`
 - State: `RUNNING`
 - Node: `dj-l40-0.grasp.maas`
 - W&B project: `libero`
 - W&B group: `libero10_logic_full_from_libero_ckpt_20260414_174205`
 - W&B: `https://wandb.ai/penn-pal/libero/runs/6s4mowfn`
-- Results dir: [data/libero/evals/libero10_logic_full_from_libero_ckpt_20260414_174205_29999_libero_10_wsfix](/home/chriswatson/openpi-finetune/openpi/data/libero/evals/libero10_logic_full_from_libero_ckpt_20260414_174205_29999_libero_10_wsfix:1)
-- Log: [logs/slurm/openpi_libero_eval-445151.out](/home/chriswatson/openpi-finetune/openpi/logs/slurm/openpi_libero_eval-445151.out:1)
+- Results dir: `data/libero/evals/libero10_logic_full_from_libero_ckpt_20260414_174205_29999_libero_10_wsfix`
+- Log: `logs/slurm/openpi_libero_eval-445151.out`
 
 Submit command used:
 
@@ -237,8 +237,8 @@ find data/libero/evals/libero10_logic_full_from_libero_ckpt_20260414_174205_2999
 ## Commentary
 
 - The key April 14 result is that the two logic-prompt full-finetune runs now both finished successfully with batch size `8`. The earlier blockers were not intrinsic to the task descriptions; they were a sequence of launcher/config issues: `uv` resolution, bad W&B CLI flag syntax, prompt validation against the wrong task catalog, missing norm stats, and then OOM at the original batch size `32`.
-- The data-loader fix that made the logic prompt file usable is in [src/openpi/training/data_loader.py](/home/chriswatson/openpi-finetune/openpi/src/openpi/training/data_loader.py:1), and the regression test is in [src/openpi/training/data_loader_test.py](/home/chriswatson/openpi-finetune/openpi/src/openpi/training/data_loader_test.py:1).
-- The task-description file itself was never the real problem. It lives at [data/libero/libero_10_logic_descriptions.json](/home/chriswatson/openpi-finetune/openpi/data/libero/libero_10_logic_descriptions.json:1) and was already correct for the `libero_10` subset.
+- The data-loader fix that made the logic prompt file usable is in [src/openpi/training/data_loader.py](src/openpi/training/data_loader.py), and the regression test is in [src/openpi/training/data_loader_test.py](src/openpi/training/data_loader_test.py).
+- The task-description file itself was never the real problem. It lives at [data/libero/libero_10_logic_descriptions.json](data/libero/libero_10_logic_descriptions.json) and was already correct for the `libero_10` subset.
 - The eval path needed much more cleanup than the training path. The repo now has better eval tooling than it did on April 14, but this part of the stack was clearly under-specified before the debugging work in this session.
 - The biggest thing we learned is that “just a `uv` env” was the right framing, but only if the environment is actually specified declaratively and built in isolation. The unstable pattern was a shared mutable `examples/libero/.venv` plus a hand-maintained install sequence. The stable pattern was:
   - explicit LIBERO eval requirements in-repo
@@ -261,9 +261,9 @@ find data/libero/evals/libero10_logic_full_from_libero_ckpt_20260414_174205_2999
 
 3. If runtime instability returns, patch client and server together again rather than only one side.
    The right place to treat this remains the serving boundary:
-   - [examples/libero/main.py](/home/chriswatson/openpi-finetune/openpi/examples/libero/main.py:1)
-   - [scripts/serve_policy.py](/home/chriswatson/openpi-finetune/openpi/scripts/serve_policy.py:1)
-   - [packages/openpi-client](/home/chriswatson/openpi-finetune/openpi/packages/openpi-client:1)
+   - [examples/libero/main.py](examples/libero/main.py)
+   - [scripts/serve_policy.py](scripts/serve_policy.py)
+   - [packages/openpi-client](packages/openpi-client)
 
 4. Once logic eval is stable, rerun the missing default-English control.
    The clean comparison we still want is:
