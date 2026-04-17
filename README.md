@@ -229,3 +229,15 @@ We will collect common issues and their solutions here. If you encounter an issu
 | `SyntaxError` at `match args.policy`      | You are running `scripts/serve_policy.py` with Python 3.8 or 3.9. Run it via `uv run` or another Python 3.11+ OpenPI environment instead of `examples/libero/.venv`.                        |
 | Import errors when running examples       | Make sure you've installed all dependencies with `uv sync` and activated the virtual environment. Some examples may have additional requirements listed in their READMEs.                    |
 | Action dimensions mismatch                | Verify your data processing transforms match the expected input/output dimensions of your robot. Check the action space definitions in your policy classes.                                  |
+
+## LIBERO Naming Caveat
+
+For LIBERO runs, not all names are just labels.
+
+- `--policy-config` is semantic. It selects a named training config, which determines model architecture, assets, normalization behavior, and prompt plumbing.
+- Training-time logic prompts are controlled by the selected config's `task_description_path`, not by the experiment name or checkpoint folder name.
+- Checkpoint run names such as `libero10_logic_lora_from_libero_ckpt_...` are mostly labels. They affect checkpoint and W&B naming, but they do not by themselves change training behavior.
+- The current LIBERO eval wrappers contain one naming heuristic: if `PROMPT_OVERRIDE_FILE` is not provided and `--policy-config` contains `_logic`, the wrapper automatically uses `data/libero/libero_10_logic_descriptions.json`.
+- The prompt override file path itself is semantic because the evaluator reads that JSON and replaces task prompts from its contents.
+
+Operational rule: when running LIBERO evals, do not rely on `_logic` appearing in a run name or checkpoint folder name. Pass the correct `--policy-config`, and if prompt behavior matters, pass `--prompt-override-file` explicitly so the eval does not depend on the wrapper's `_logic` heuristic.

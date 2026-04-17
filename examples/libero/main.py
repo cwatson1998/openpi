@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import pathlib
+import time
 
 import imageio
 from libero.libero import benchmark
@@ -22,6 +23,7 @@ from openpi.training import libero as libero_utils
 
 LIBERO_DUMMY_ACTION = [0.0] * 6 + [-1.0]
 LIBERO_ENV_RESOLUTION = 256  # resolution used to render training data
+REPLAY_VIDEO_FPS = 10
 
 
 @dataclasses.dataclass
@@ -56,6 +58,7 @@ class Args:
     # Pass an explicit path to override (e.g. --args.video-out-path data/libero/my_run).
     video_out_path: str | None = None
     results_out_path: str | None = None  # Optional path to save aggregated results JSON
+    progress_out_path: str | None = None  # Optional path to save incremental eval progress JSON
 
     # Optional JSON file that maps task_instruction -> logic_task_description.
     # Expected format matches libero_object_train7_logic_descriptions.json:
@@ -76,6 +79,7 @@ class Args:
     policy_config: str | None = None
     checkpoint_dir: str | None = None
     train_run_name: str | None = None
+    wandb_upload_episode_videos: bool = True
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -125,10 +129,268 @@ def _init_wandb(args: Args) -> None:
     wandb.init(**init_kwargs)
 
 
+def _task_metric_prefix(task_id: int) -> str:
+    return f"streaming/task_{task_id}"
+
+
+def _define_wandb_metrics(selected_task_ids: list[int]) -> None:
+    if wandb.run is None:
+        return
+
+    wandb.define_metric("eval/episode", hidden=True)
+    for metric_name in (
+        "eval/episode_success",
+        "eval/episode_steps",
+        "eval/episode_wait_steps",
+        "eval/episode_policy_steps",
+        "eval/episode_policy_inference_calls",
+        "eval/episode_reached_policy_step",
+        "eval/episode_runtime_s",
+        "eval/episode_had_error",
+        "eval/episodes_completed",
+        "eval/tasks_completed",
+        "eval/task_id",
+        "eval/task_success_rate",
+        "eval/total_successes",
+        "eval/total_success_rate_running",
+        "eval/current_task_id",
+        "eval/current_task_episode",
+        "eval/current_task_successes",
+        "eval/current_task_success_rate_running",
+    ):
+        wandb.define_metric(metric_name, step_metric="eval/episode")
+
+    for task_id in selected_task_ids:
+        prefix = _task_metric_prefix(task_id)
+        wandb.define_metric(f"{prefix}/episode", hidden=True)
+        for metric_name in (
+            "episode_success",
+            "episode_steps",
+            "episode_wait_steps",
+            "episode_policy_steps",
+            "episode_policy_inference_calls",
+            "episode_reached_policy_step",
+            "episode_runtime_s",
+            "episode_had_error",
+            "episodes_completed",
+            "successes",
+            "success_rate_running",
+        ):
+            wandb.define_metric(f"{prefix}/{metric_name}", step_metric=f"{prefix}/episode")
+
+
+def _log_wandb_episode_metrics(
+    *,
+    task_id: int,
+    episode_index: int,
+    success: bool,
+    steps_taken: int,
+    wait_steps_taken: int,
+    policy_steps_taken: int,
+    policy_inference_calls: int,
+    episode_runtime_s: float,
+    had_error: bool,
+    task_episodes: int,
+    task_successes: int,
+    total_episodes: int,
+    total_successes: int,
+    tasks_completed: int,
+) -> None:
+    if wandb.run is None:
+        return
+
+    task_prefix = _task_metric_prefix(task_id)
+    task_success_rate = float(task_successes) / float(task_episodes)
+    total_success_rate = float(total_successes) / float(total_episodes)
+    wandb.log(
+        {
+            "eval/episode": total_episodes,
+            "eval/episode_success": float(success),
+            "eval/episode_steps": steps_taken,
+            "eval/episode_wait_steps": wait_steps_taken,
+            "eval/episode_policy_steps": policy_steps_taken,
+            "eval/episode_policy_inference_calls": policy_inference_calls,
+            "eval/episode_reached_policy_step": float(policy_steps_taken > 0),
+            "eval/episode_runtime_s": episode_runtime_s,
+            "eval/episode_had_error": float(had_error),
+            "eval/episodes_completed": total_episodes,
+            "eval/tasks_completed": tasks_completed,
+            "eval/total_successes": total_successes,
+            "eval/total_success_rate_running": total_success_rate,
+            "eval/current_task_id": task_id,
+            "eval/current_task_episode": task_episodes,
+            "eval/current_task_successes": task_successes,
+            "eval/current_task_success_rate_running": task_success_rate,
+            f"{task_prefix}/episode": episode_index + 1,
+            f"{task_prefix}/episode_success": float(success),
+            f"{task_prefix}/episode_steps": steps_taken,
+            f"{task_prefix}/episode_wait_steps": wait_steps_taken,
+            f"{task_prefix}/episode_policy_steps": policy_steps_taken,
+            f"{task_prefix}/episode_policy_inference_calls": policy_inference_calls,
+            f"{task_prefix}/episode_reached_policy_step": float(policy_steps_taken > 0),
+            f"{task_prefix}/episode_runtime_s": episode_runtime_s,
+            f"{task_prefix}/episode_had_error": float(had_error),
+            f"{task_prefix}/episodes_completed": task_episodes,
+            f"{task_prefix}/successes": task_successes,
+            f"{task_prefix}/success_rate_running": task_success_rate,
+        }
+    )
+
+
+def _log_wandb_task_metrics(
+    *,
+    task_id: int,
+    task_episodes: int,
+    task_successes: int,
+    total_episodes: int,
+    total_successes: int,
+    tasks_completed: int,
+) -> None:
+    if wandb.run is None:
+        return
+
+    wandb.log(
+        {
+            "eval/episode": total_episodes,
+            "eval/task_id": task_id,
+            "eval/task_success_rate": float(task_successes) / float(task_episodes),
+            "eval/total_success_rate_running": float(total_successes) / float(total_episodes),
+            "eval/tasks_completed": tasks_completed,
+            "eval/episodes_completed": total_episodes,
+        }
+    )
+
+
+def _build_task_result(
+    *,
+    task_id: int,
+    task_description: str,
+    task_episodes: int,
+    task_successes: int,
+    episode_results: list[dict],
+) -> dict:
+    return {
+        "task_id": task_id,
+        "task_description": task_description,
+        "episodes": task_episodes,
+        "successes": task_successes,
+        "success_rate": float(task_successes) / float(task_episodes) if task_episodes else 0.0,
+        "episode_results": episode_results,
+    }
+
+
+def _build_results_payload(
+    *,
+    args: Args,
+    run_started_at: str,
+    selected_task_ids: list[int],
+    selected_tasks: tuple[str, ...],
+    video_out_path: pathlib.Path,
+    task_results: list[dict],
+    total_episodes: int,
+    total_successes: int,
+    status: str,
+    active_task: dict | None = None,
+) -> dict:
+    total_success_rate = float(total_successes) / float(total_episodes) if total_episodes else 0.0
+    return {
+        "schema_version": 1,
+        "status": status,
+        "generated_at": run_started_at,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "active_task": active_task,
+        "task_suite_name": args.task_suite_name,
+        "task_split_file": args.task_split_file,
+        "task_split": args.task_split,
+        "selected_task_ids": selected_task_ids,
+        "selected_tasks": selected_tasks,
+        "num_trials_per_task": args.num_trials_per_task,
+        "num_steps_wait": args.num_steps_wait,
+        "replan_steps": args.replan_steps,
+        "resize_size": args.resize_size,
+        "seed": args.seed,
+        "host": args.host,
+        "port": args.port,
+        "video_out_path": str(video_out_path),
+        "total_episodes": total_episodes,
+        "total_successes": total_successes,
+        "total_success_rate": total_success_rate,
+        "task_results": task_results,
+    }
+
+
+def _write_json(path: pathlib.Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def _persist_eval_outputs(
+    *,
+    args: Args,
+    run_started_at: str,
+    selected_task_ids: list[int],
+    selected_tasks: tuple[str, ...],
+    video_out_path: pathlib.Path,
+    results_out_path: pathlib.Path,
+    progress_out_path: pathlib.Path,
+    task_results: list[dict],
+    total_episodes: int,
+    total_successes: int,
+    status: str,
+    active_task: dict | None = None,
+) -> dict:
+    payload = _build_results_payload(
+        args=args,
+        run_started_at=run_started_at,
+        selected_task_ids=selected_task_ids,
+        selected_tasks=selected_tasks,
+        video_out_path=video_out_path,
+        task_results=task_results,
+        total_episodes=total_episodes,
+        total_successes=total_successes,
+        status=status,
+        active_task=active_task,
+    )
+    _write_json(results_out_path, payload)
+    if progress_out_path != results_out_path:
+        _write_json(progress_out_path, payload)
+    return payload
+
+
+def _maybe_log_wandb_episode_video(
+    *,
+    task_id: int,
+    task_description: str,
+    episode_index: int,
+    total_episodes: int,
+    success: bool,
+    had_error: bool,
+    video_path: pathlib.Path,
+    uploaded_video_categories: dict[int, set[str]],
+) -> None:
+    if wandb.run is None:
+        return
+
+    category = "error" if had_error else "success" if success else "failure"
+    if category in uploaded_video_categories[task_id]:
+        return
+
+    uploaded_video_categories[task_id].add(category)
+    wandb.log(
+        {
+            "eval/episode": total_episodes,
+            f"eval/videos/task_{task_id}/{category}": wandb.Video(str(video_path), fps=REPLAY_VIDEO_FPS, format="mp4"),
+            f"eval/videos/task_{task_id}/{category}_episode": episode_index + 1,
+            f"eval/videos/task_{task_id}/{category}_task_description": task_description,
+        }
+    )
+
+
 def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
     _init_wandb(args)
+    run_started_at = datetime.now(UTC).isoformat()
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -150,6 +412,7 @@ def eval_libero(args: Args) -> None:
     ]
     if not selected_task_ids:
         raise ValueError("No LIBERO evaluation tasks matched the requested task filter.")
+    _define_wandb_metrics(selected_task_ids)
 
     prompt_overrides: dict[str, str] = {}
     if args.prompt_override_file:
@@ -174,6 +437,8 @@ def eval_libero(args: Args) -> None:
 
     results_out_path = pathlib.Path(args.results_out_path) if args.results_out_path else video_out_path / "results.json"
     results_out_path.parent.mkdir(parents=True, exist_ok=True)
+    progress_out_path = pathlib.Path(args.progress_out_path) if args.progress_out_path else video_out_path / "eval_progress.json"
+    progress_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.task_suite_name == "libero_spatial":
         max_steps = 220  # longest training demo has 193 steps
@@ -193,6 +458,20 @@ def eval_libero(args: Args) -> None:
     # Start evaluation
     total_episodes, total_successes = 0, 0
     task_results = []
+    uploaded_video_categories: dict[int, set[str]] = collections.defaultdict(set)
+    _persist_eval_outputs(
+        args=args,
+        run_started_at=run_started_at,
+        selected_task_ids=selected_task_ids,
+        selected_tasks=selected_tasks,
+        video_out_path=video_out_path,
+        results_out_path=results_out_path,
+        progress_out_path=progress_out_path,
+        task_results=task_results,
+        total_episodes=total_episodes,
+        total_successes=total_successes,
+        status="running",
+    )
     for task_id in tqdm.tqdm(selected_task_ids):
         # Get task
         task = task_suite.get_task(task_id)
@@ -209,6 +488,7 @@ def eval_libero(args: Args) -> None:
         episode_results = []
         for episode_idx in tqdm.tqdm(range(args.num_trials_per_task)):
             logging.info(f"\nTask: {task_description}")
+            episode_start_time = time.perf_counter()
 
             # Reset environment
             env.reset()
@@ -219,9 +499,15 @@ def eval_libero(args: Args) -> None:
 
             # Setup
             t = 0
+            wait_steps_taken = 0
+            policy_steps_taken = 0
+            policy_inference_calls = 0
             replay_images = []
             done = False
             error = None
+            error_stage = None
+            termination_reason = "max_steps"
+            episode_phase = "wait"
 
             logging.info(f"Starting episode {task_episodes+1}...")
             while t < max_steps + args.num_steps_wait:
@@ -229,8 +515,10 @@ def eval_libero(args: Args) -> None:
                     # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
                     # and we need to wait for them to fall
                     if t < args.num_steps_wait:
+                        episode_phase = "wait"
                         obs, reward, done, info = env.step(LIBERO_DUMMY_ACTION)
                         t += 1
+                        wait_steps_taken += 1
                         continue
 
                     # Get preprocessed image
@@ -264,6 +552,8 @@ def eval_libero(args: Args) -> None:
                         }
 
                         # Query model to get action
+                        episode_phase = "policy_inference"
+                        policy_inference_calls += 1
                         action_chunk = client.infer(element)["actions"]
                         assert (
                             len(action_chunk) >= args.replan_steps
@@ -273,95 +563,179 @@ def eval_libero(args: Args) -> None:
                     action = action_plan.popleft()
 
                     # Execute action in environment
+                    episode_phase = "policy_action"
                     obs, reward, done, info = env.step(action.tolist())
+                    t += 1
+                    policy_steps_taken += 1
                     if done:
                         task_successes += 1
                         total_successes += 1
+                        termination_reason = "success"
                         break
-                    t += 1
 
                 except Exception as e:
-                    logging.error(f"Caught exception: {e}")
+                    logging.error(f"Caught exception during {episode_phase}: {e}")
                     error = str(e)
+                    error_stage = episode_phase
+                    termination_reason = "error"
                     break
+            else:
+                termination_reason = "max_steps"
 
             task_episodes += 1
             total_episodes += 1
+            episode_runtime_s = time.perf_counter() - episode_start_time
+            _log_wandb_episode_metrics(
+                task_id=task_id,
+                episode_index=episode_idx,
+                success=bool(done),
+                steps_taken=t,
+                wait_steps_taken=wait_steps_taken,
+                policy_steps_taken=policy_steps_taken,
+                policy_inference_calls=policy_inference_calls,
+                episode_runtime_s=episode_runtime_s,
+                had_error=error is not None,
+                task_episodes=task_episodes,
+                task_successes=task_successes,
+                total_episodes=total_episodes,
+                total_successes=total_successes,
+                tasks_completed=len(task_results),
+            )
 
             # Save a replay video of the episode
             suffix = "success" if done else "failure"
             task_segment = task_description.replace(" ", "_")
-            video_path = video_out_path / f"rollout_{task_segment}_{suffix}.mp4"
-            imageio.mimwrite(video_path, [np.asarray(x) for x in replay_images], fps=10)
+            video_path = video_out_path / f"rollout_{task_segment}_ep_{episode_idx:03d}_{suffix}.mp4"
+            imageio.mimwrite(video_path, [np.asarray(x) for x in replay_images], fps=REPLAY_VIDEO_FPS)
             episode_results.append(
                 {
                     "episode_index": episode_idx,
                     "success": bool(done),
                     "steps_taken": t,
+                    "wait_steps_taken": wait_steps_taken,
+                    "policy_steps_taken": policy_steps_taken,
+                    "policy_inference_calls": policy_inference_calls,
+                    "reached_policy_step": policy_steps_taken > 0,
+                    "termination_reason": termination_reason,
+                    "error_stage": error_stage,
                     "video_path": str(video_path),
                     "error": error,
                 }
             )
+            if args.wandb_upload_episode_videos:
+                _maybe_log_wandb_episode_video(
+                    task_id=task_id,
+                    task_description=task_description,
+                    episode_index=episode_idx,
+                    total_episodes=total_episodes,
+                    success=bool(done),
+                    had_error=error is not None,
+                    video_path=video_path,
+                    uploaded_video_categories=uploaded_video_categories,
+                )
+
+            _persist_eval_outputs(
+                args=args,
+                run_started_at=run_started_at,
+                selected_task_ids=selected_task_ids,
+                selected_tasks=selected_tasks,
+                video_out_path=video_out_path,
+                results_out_path=results_out_path,
+                progress_out_path=progress_out_path,
+                task_results=[
+                    *task_results,
+                    _build_task_result(
+                        task_id=task_id,
+                        task_description=task_description,
+                        task_episodes=task_episodes,
+                        task_successes=task_successes,
+                        episode_results=episode_results,
+                    ),
+                ],
+                total_episodes=total_episodes,
+                total_successes=total_successes,
+                status="running",
+                active_task={
+                    "task_id": task_id,
+                    "task_description": task_description,
+                    "task_episodes_completed": task_episodes,
+                    "task_successes": task_successes,
+                    "episode_index": episode_idx,
+                },
+            )
 
             # Log current results
             logging.info(f"Success: {done}")
+            logging.info(
+                "Episode summary: termination=%s total_steps=%d wait_steps=%d policy_steps=%d "
+                "policy_inference_calls=%d error_stage=%s",
+                termination_reason,
+                t,
+                wait_steps_taken,
+                policy_steps_taken,
+                policy_inference_calls,
+                error_stage,
+            )
             logging.info(f"# episodes completed so far: {total_episodes}")
             logging.info(f"# successes: {total_successes} ({total_successes / total_episodes * 100:.1f}%)")
 
         # Log final results
         logging.info(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         logging.info(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
-        wandb.log(
-            {
-                "eval/task_id": task_id,
-                "eval/task_success_rate": float(task_successes) / float(task_episodes),
-                "eval/total_success_rate_running": float(total_successes) / float(total_episodes),
-                "eval/tasks_completed": len(task_results) + 1,
-                "eval/episodes_completed": total_episodes,
-            },
-            step=len(task_results) + 1,
+        _log_wandb_task_metrics(
+            task_id=task_id,
+            task_episodes=task_episodes,
+            task_successes=task_successes,
+            total_episodes=total_episodes,
+            total_successes=total_successes,
+            tasks_completed=len(task_results) + 1,
         )
         task_results.append(
-            {
-                "task_id": task_id,
-                "task_description": task_description,
-                "episodes": task_episodes,
-                "successes": task_successes,
-                "success_rate": float(task_successes) / float(task_episodes),
-                "episode_results": episode_results,
-            }
+            _build_task_result(
+                task_id=task_id,
+                task_description=task_description,
+                task_episodes=task_episodes,
+                task_successes=task_successes,
+                episode_results=episode_results,
+            )
+        )
+        _persist_eval_outputs(
+            args=args,
+            run_started_at=run_started_at,
+            selected_task_ids=selected_task_ids,
+            selected_tasks=selected_tasks,
+            video_out_path=video_out_path,
+            results_out_path=results_out_path,
+            progress_out_path=progress_out_path,
+            task_results=task_results,
+            total_episodes=total_episodes,
+            total_successes=total_successes,
+            status="running",
         )
 
-    total_success_rate = float(total_successes) / float(total_episodes)
+    final_payload = _persist_eval_outputs(
+        args=args,
+        run_started_at=run_started_at,
+        selected_task_ids=selected_task_ids,
+        selected_tasks=selected_tasks,
+        video_out_path=video_out_path,
+        results_out_path=results_out_path,
+        progress_out_path=progress_out_path,
+        task_results=task_results,
+        total_episodes=total_episodes,
+        total_successes=total_successes,
+        status="completed",
+    )
+    total_success_rate = final_payload["total_success_rate"]
     logging.info(f"Total success rate: {total_success_rate}")
     logging.info(f"Total episodes: {total_episodes}")
-    results = {
-        "generated_at": datetime.now(UTC).isoformat(),
-        "task_suite_name": args.task_suite_name,
-        "task_split_file": args.task_split_file,
-        "task_split": args.task_split,
-        "selected_task_ids": selected_task_ids,
-        "selected_tasks": selected_tasks,
-        "num_trials_per_task": args.num_trials_per_task,
-        "num_steps_wait": args.num_steps_wait,
-        "replan_steps": args.replan_steps,
-        "resize_size": args.resize_size,
-        "seed": args.seed,
-        "host": args.host,
-        "port": args.port,
-        "video_out_path": str(video_out_path),
-        "total_episodes": total_episodes,
-        "total_successes": total_successes,
-        "total_success_rate": total_success_rate,
-        "task_results": task_results,
-    }
-    results_out_path.write_text(json.dumps(results, indent=2) + "\n")
     logging.info(f"Saved results JSON to {results_out_path}")
     if wandb.run is not None:
         wandb.summary["eval/total_success_rate"] = total_success_rate
         wandb.summary["eval/total_successes"] = total_successes
         wandb.summary["eval/total_episodes"] = total_episodes
         wandb.summary["eval/results_out_path"] = str(results_out_path)
+        wandb.summary["eval/progress_out_path"] = str(progress_out_path)
         wandb.summary["eval/video_out_path"] = str(video_out_path)
         for task_result in task_results:
             task_slug = task_result["task_description"].replace(" ", "_")
@@ -369,6 +743,8 @@ def eval_libero(args: Args) -> None:
 
         artifact = wandb.Artifact(f"{wandb.run.id}-libero-eval-results", type="libero-eval-results")
         artifact.add_file(str(results_out_path), name="results.json")
+        if progress_out_path.exists():
+            artifact.add_file(str(progress_out_path), name="eval_progress.json")
         wandb.log_artifact(artifact)
         wandb.finish()
 

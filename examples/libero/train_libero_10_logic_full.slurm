@@ -21,6 +21,9 @@ export USE_TF=0
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.9}"
 export TOKENIZERS_PARALLELISM=false
 export WANDB_MODE="${WANDB_MODE:-online}"
+# Avoid concurrent LeRobot dataset downloads into the same shared local_dir.
+export LEROBOT_HOME="${LEROBOT_HOME:-/tmp/${USER}/lerobot/${SLURM_JOB_ID:-local}}"
+mkdir -p "${LEROBOT_HOME}"
 
 CONFIG_NAME="${CONFIG_NAME:-pi0_fast_libero_10_logic}"
 EXP_NAME="${EXP_NAME:-libero10_logic_full}"
@@ -33,6 +36,7 @@ WEIGHT_LOADER_PARAMS_PATH="${WEIGHT_LOADER_PARAMS_PATH:-}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-200}"
 KEEP_PERIOD="${KEEP_PERIOD:-1000}"
+TRAINING_LABEL="${TRAINING_LABEL:-full fine-tune}"
 
 export OPENPI_WANDB_TAGS="${WANDB_TAGS}"
 if [[ -n "${WANDB_GROUP}" ]]; then
@@ -72,7 +76,7 @@ trap 'handle_signal TERM' TERM
 mkdir -p "$(dirname "${CHECKPOINT_DIR}")" logs/slurm
 
 echo "[$(timestamp)] Host: $(hostname)"
-echo "[$(timestamp)] Starting full fine-tune"
+echo "[$(timestamp)] Starting ${TRAINING_LABEL}"
 echo "[$(timestamp)] Config: ${CONFIG_NAME}"
 echo "[$(timestamp)] Experiment: ${EXP_NAME}"
 echo "[$(timestamp)] Checkpoints: ${CHECKPOINT_DIR}"
@@ -83,6 +87,7 @@ fi
 echo "[$(timestamp)] W&B tags: ${WANDB_TAGS}"
 echo "[$(timestamp)] FSDP devices: ${FSDP_DEVICES}"
 echo "[$(timestamp)] Batch size: ${BATCH_SIZE}"
+echo "[$(timestamp)] LeRobot cache: ${LEROBOT_HOME}"
 if [[ -n "${WEIGHT_LOADER_PARAMS_PATH}" ]]; then
   echo "[$(timestamp)] Weight loader: ${WEIGHT_LOADER_PARAMS_PATH}"
 fi
