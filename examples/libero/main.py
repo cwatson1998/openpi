@@ -11,6 +11,7 @@ import time
 import imageio
 from libero.libero import benchmark
 from libero.libero import get_libero_path
+from libero.libero.envs import MaskedSegmentationRenderEnv
 from libero.libero.envs import OffScreenRenderEnv
 import numpy as np
 from openpi_client import image_tools
@@ -48,6 +49,10 @@ class Args:
     task_split: str = "eval"
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
+    mask_instances_csv: str = ""  # Optional comma-separated instance names to mask in returned RGB observations.
+    mask_rgb_csv: str = "0,0,0"  # RGB color used for masked pixels.
+    mask_alpha: float = 1.0  # Alpha used to blend masked pixels with mask_rgb_csv.
+    mask_cameras_csv: str = ""  # Optional comma-separated cameras to mask, e.g. agentview,robot0_eye_in_hand.
 
     #################################################################################################################
     # Utils
@@ -88,6 +93,17 @@ def _parse_tags(csv_value: str) -> list[str]:
     return [tag.strip() for tag in csv_value.split(",") if tag.strip()]
 
 
+def _parse_csv_list(csv_value: str) -> list[str]:
+    return [item.strip() for item in csv_value.split(",") if item.strip()]
+
+
+def _parse_rgb_csv(csv_value: str) -> tuple[int, int, int]:
+    parts = [part.strip() for part in csv_value.split(",") if part.strip()]
+    if len(parts) != 3:
+        raise ValueError(f"Expected three comma-separated RGB values, got `{csv_value}`.")
+    return tuple(int(part) for part in parts)
+
+
 def _default_eval_wandb_name(args: Args) -> str:
     checkpoint_name = pathlib.Path(args.checkpoint_dir).name if args.checkpoint_dir else "unknown_ckpt"
     train_run_name = args.train_run_name or (
@@ -112,6 +128,10 @@ def _init_wandb(args: Args) -> None:
             "task_split_file": args.task_split_file,
             "task_split": args.task_split,
             "num_trials_per_task": args.num_trials_per_task,
+            "mask_instances_csv": args.mask_instances_csv,
+            "mask_rgb_csv": args.mask_rgb_csv,
+            "mask_alpha": args.mask_alpha,
+            "mask_cameras_csv": args.mask_cameras_csv,
             "replan_steps": args.replan_steps,
             "resize_size": args.resize_size,
             "seed": args.seed,
@@ -297,7 +317,7 @@ def _build_results_payload(
         "schema_version": 1,
         "status": status,
         "generated_at": run_started_at,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017 - keep Python 3.10 compatibility
         "active_task": active_task,
         "task_suite_name": args.task_suite_name,
         "task_split_file": args.task_split_file,
@@ -390,7 +410,7 @@ def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
     _init_wandb(args)
-    run_started_at = datetime.now(timezone.utc).isoformat()
+    run_started_at = datetime.now(timezone.utc).isoformat()  # noqa: UP017 - keep Python 3.10 compatibility
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -427,7 +447,7 @@ def eval_libero(args: Args) -> None:
     if args.video_out_path:
         video_out_path = pathlib.Path(args.video_out_path)
     else:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")  # noqa: UP017 - keep Python 3.10 compatibility
         run_tag = args.task_suite_name
         if args.prompt_override_file:
             run_tag += "_logic"
@@ -480,7 +500,7 @@ def eval_libero(args: Args) -> None:
         initial_states = task_suite.get_task_init_states(task_id)
 
         # Initialize LIBERO environment and task description
-        env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed)
+        env, task_description = _get_libero_env(task, LIBERO_ENV_RESOLUTION, args.seed, args)
         task_description = prompt_overrides.get(task_description, task_description)
 
         # Start episodes
@@ -749,12 +769,22 @@ def eval_libero(args: Args) -> None:
         wandb.finish()
 
 
-def _get_libero_env(task, resolution, seed):
+def _get_libero_env(task, resolution, seed, args: Args):
     """Initializes and returns the LIBERO environment, along with the task description."""
     task_description = task.language
     task_bddl_file = pathlib.Path(get_libero_path("bddl_files")) / task.problem_folder / task.bddl_file
     env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution, "camera_widths": resolution}
-    env = OffScreenRenderEnv(**env_args)
+    masked_instances = _parse_csv_list(args.mask_instances_csv)
+    if masked_instances:
+        env_args["masked_instance_names"] = masked_instances
+        env_args["mask_rgb"] = _parse_rgb_csv(args.mask_rgb_csv)
+        env_args["mask_alpha"] = float(args.mask_alpha)
+        mask_cameras = _parse_csv_list(args.mask_cameras_csv)
+        if mask_cameras:
+            env_args["mask_camera_names"] = mask_cameras
+        env = MaskedSegmentationRenderEnv(**env_args)
+    else:
+        env = OffScreenRenderEnv(**env_args)
     env.seed(seed)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     return env, task_description
 

@@ -6,12 +6,14 @@ import h5py
 import numpy as np
 
 from annotation.libero_demo_replay import RldsEpisode
+from annotation.libero_demo_replay import _parse_rgb_triplet
 from annotation.libero_demo_replay import match_demo_key
 from annotation.libero_demo_replay import resolve_demo_hdf5_path
 from annotation.libero_demo_replay import trace_bddl_file_resolution
 from annotation.libero_demo_replay import trace_demo_hdf5_resolution
 from annotation.libero_demo_replay import write_rlds_episode_visualization
 from annotation.libero_episode_sanity_check import make_sanity_check_frames
+from annotation.libero_masked_replay_visualization import make_mask_comparison_frames
 
 
 def _write_demo(
@@ -169,3 +171,27 @@ def test_make_sanity_check_frames_stacks_and_labels_frames() -> None:
     assert np.all(combined[:, 66:, :9] == 0)
     assert np.all(combined[:, 66:, 11:] == 255)
     assert np.any(combined[:, :66] != 18)
+
+
+def test_parse_rgb_triplet_accepts_string_and_sequence() -> None:
+    assert _parse_rgb_triplet("1,2,3") == (1, 2, 3)
+    assert _parse_rgb_triplet([4, 5, 6]) == (4, 5, 6)
+
+
+def test_make_mask_comparison_frames_stacks_and_labels_frames() -> None:
+    left = np.zeros((2, 6, 8, 3), dtype=np.uint8)
+    right = np.full((2, 6, 8, 3), 255, dtype=np.uint8)
+
+    combined = make_mask_comparison_frames(
+        original_frames=left,
+        masked_frames=right,
+        dataset_name="libero_spatial_no_noops",
+        episode_index=0,
+        task_instruction="pick up the black bowl next to the cookie box and place it on the plate",
+        masked_instances=["akita_black_bowl_1"],
+    )
+
+    assert combined.shape == (2, 6 + 84, 16, 3)
+    assert np.all(combined[:, 84:, :7] == 0)
+    assert np.all(combined[:, 84:, 9:] == 255)
+    assert np.any(combined[:, :84] != 22)

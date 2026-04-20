@@ -24,6 +24,8 @@ Example usage:
       --demo-search-root third_party/libero/libero/datasets \\
       --camera-width 256 \\
       --camera-height 256 \\
+      --masked-instance akita_black_bowl_1 \\
+      --mask-rgb 0,0,0 \\
       --output-dir outputs/libero_demo_replay/ep0_256 \\
       --video-path outputs/libero_demo_replay/ep0_256.mp4
 
@@ -549,10 +551,24 @@ def _load_libero_modules() -> tuple[Any, Any]:
     if str(libero_root) not in sys.path:
         sys.path.insert(0, str(libero_root))
 
+    from libero.libero.envs import MaskedSegmentationRenderEnv
     from libero.libero.envs import OffScreenRenderEnv
     from libero.libero.utils.utils import postprocess_model_xml
 
-    return OffScreenRenderEnv, postprocess_model_xml
+    return OffScreenRenderEnv, MaskedSegmentationRenderEnv, postprocess_model_xml
+
+
+def _parse_rgb_triplet(rgb_value: str | tuple[int, int, int] | list[int]) -> tuple[int, int, int]:
+    if isinstance(rgb_value, str):
+        parts = [part.strip() for part in rgb_value.split(",") if part.strip()]
+        if len(parts) != 3:
+            raise ValueError(f"Expected mask RGB in `R,G,B` format, got `{rgb_value}`.")
+        return tuple(int(part) for part in parts)
+
+    rgb_array = np.asarray(rgb_value, dtype=np.int32).reshape(-1)
+    if rgb_array.shape != (3,):
+        raise ValueError("Mask RGB must contain exactly three channels.")
+    return tuple(int(channel) for channel in rgb_array)
 
 
 def _postprocess_demo_model_xml(raw_model_xml: str, libero_postprocess_model_xml: Any) -> str:
@@ -602,6 +618,10 @@ def render_demo(
     camera_width: int | None = None,
     frame_stride: int = 1,
     max_frames: int | None = None,
+    masked_instance_names: list[str] | tuple[str, ...] | None = None,
+    mask_rgb: tuple[int, int, int] | list[int] | str = (0, 0, 0),
+    mask_alpha: float = 1.0,
+    mask_camera_names: list[str] | tuple[str, ...] | None = None,
 ) -> RenderResult:
     if frame_stride <= 0:
         raise ValueError("frame_stride must be positive.")
@@ -614,13 +634,22 @@ def render_demo(
         camera_height = camera_height or 256
         camera_width = camera_width or 256
 
-    offscreen_render_env_cls, libero_postprocess_model_xml = _load_libero_modules()
-    env = offscreen_render_env_cls(
-        bddl_file_name=spec.bddl_file_name,
-        camera_names=[camera_name],
-        camera_heights=camera_height,
-        camera_widths=camera_width,
-    )
+    offscreen_render_env_cls, masked_segmentation_env_cls, libero_postprocess_model_xml = _load_libero_modules()
+    env_kwargs = {
+        "bddl_file_name": spec.bddl_file_name,
+        "camera_names": [camera_name],
+        "camera_heights": camera_height,
+        "camera_widths": camera_width,
+    }
+    masked_instance_names = list(masked_instance_names or [])
+    if masked_instance_names:
+        env_kwargs["masked_instance_names"] = masked_instance_names
+        env_kwargs["mask_rgb"] = _parse_rgb_triplet(mask_rgb)
+        env_kwargs["mask_alpha"] = float(mask_alpha)
+        env_kwargs["mask_camera_names"] = list(mask_camera_names or [camera_name])
+        env = masked_segmentation_env_cls(**env_kwargs)
+    else:
+        env = offscreen_render_env_cls(**env_kwargs)
 
     frame_errors: list[float] = []
     try:
@@ -748,6 +777,10 @@ def _build_manifest(
     episode_index: int | None,
     frame_stride: int,
     max_frames: int | None,
+    masked_instance_names: list[str] | tuple[str, ...] | None = None,
+    mask_rgb: tuple[int, int, int] | list[int] | str = (0, 0, 0),
+    mask_alpha: float = 1.0,
+    mask_camera_names: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     manifest = {
         "dataset_name": dataset_name,
@@ -768,6 +801,13 @@ def _build_manifest(
         "mean_abs_error": render_result.mean_abs_error,
         "max_abs_error": render_result.max_abs_error,
     }
+    if masked_instance_names:
+        manifest["rgb_mask"] = {
+            "instance_names": list(masked_instance_names),
+            "mask_rgb": list(_parse_rgb_triplet(mask_rgb)),
+            "mask_alpha": float(mask_alpha),
+            "camera_names": list(mask_camera_names or [render_result.camera_name]),
+        }
     if spec.matching_summary is not None:
         manifest["matching_summary"] = spec.matching_summary
     return manifest
@@ -811,6 +851,10 @@ def main() -> None:
     parser.add_argument("--camera-width", type=int)
     parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--max-frames", type=int)
+    parser.add_argument("--masked-instance", action="append", default=[])
+    parser.add_argument("--mask-rgb", default="0,0,0")
+    parser.add_argument("--mask-alpha", type=float, default=1.0)
+    parser.add_argument("--mask-camera-name", action="append", default=[])
     parser.add_argument("--fps", type=int, default=10)
     parser.add_argument("--output-dir", default="outputs/libero_demo_replay")
     parser.add_argument("--video-path")
@@ -834,6 +878,10 @@ def main() -> None:
         camera_width=args.camera_width,
         frame_stride=args.frame_stride,
         max_frames=args.max_frames,
+        masked_instance_names=args.masked_instance,
+        mask_rgb=args.mask_rgb,
+        mask_alpha=args.mask_alpha,
+        mask_camera_names=args.mask_camera_name,
     )
     manifest = _build_manifest(
         spec,
@@ -843,6 +891,10 @@ def main() -> None:
         episode_index=args.episode_index,
         frame_stride=args.frame_stride,
         max_frames=args.max_frames,
+        masked_instance_names=args.masked_instance,
+        mask_rgb=args.mask_rgb,
+        mask_alpha=args.mask_alpha,
+        mask_camera_names=args.mask_camera_name,
     )
     write_render_outputs(
         render_result,
