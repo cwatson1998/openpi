@@ -4,20 +4,32 @@
 `openpi` is a Python training and serving repo for OpenPI policies. Most active work happens in:
 
 - `src/openpi/`: training, policies, models, transforms, serving
+- `src/annotation/`: LIBERO dataset visualization, replay, and annotation utilities
 - `scripts/`: entrypoints like training and policy serving
 - `examples/libero/`: LIBERO-specific training and eval tooling
 - `packages/openpi-client/`: local client package used by eval and serving flows
 
 Treat `third_party/` as vendored code. Avoid editing it unless the task explicitly requires it.
 
+`third_party/libero` is a git submodule, not just a plain folder. If you need to modify LIBERO itself:
+
+- create or switch to a real branch inside `third_party/libero` before making changes; do not develop on a detached HEAD
+- commit the LIBERO changes inside the submodule first
+- then return to the main repo and commit the updated `third_party/libero` submodule pointer separately
+- if you also change `src/annotation/` or other main-repo code, prefer separate commits for the submodule bump and the main-repo integration
+
 ## Important Paths
 - `src/openpi/training/config.py`: train config definitions and named configs
 - `src/openpi/training/data_loader.py`: dataset wiring, including LIBERO prompt selection
 - `src/openpi/serving/websocket_policy_server.py`: websocket serving path
+- `src/annotation/libero_demo_replay.py`: simulator-backed LIBERO replay and path-resolution utilities
+- `src/annotation/libero_resolution_inspector.py`: RLDS episode -> source HDF5 / BDDL / model XML inspection helper
 - `packages/openpi-client/src/openpi_client/websocket_client_policy.py`: websocket client used by eval
 - `scripts/train.py`: main training entrypoint
 - `scripts/serve_policy.py`: local/server policy launcher
 - `examples/libero/main.py`: LIBERO eval driver
+- `scripts/eval_libero10_logic_lora_pair.sh`: sequential local runner for the two LIBERO-10 logic LoRA checkpoints
+- `docs/local_eval_libero10_logic_lora.md`: local two-checkpoint LIBERO-10 logic LoRA workflow
 - `examples/libero/train_libero_10_logic_full.slurm`: current Slurm training launcher for logic-prompt LIBERO runs
 - `examples/libero/eval_checkpoint.slurm`: current Slurm eval job
 - `scripts/submit_libero_eval_slurm.sh`: helper for submitting eval jobs
@@ -44,6 +56,25 @@ The root project is the primary dev environment. LIBERO eval is different:
 - LIBERO eval currently uses a separate Python 3.10 environment
 - the Slurm eval flow can build a job-local env under `/tmp/...`
 - do not assume the root `.venv` is enough for LIBERO simulator work
+
+The `src/annotation/` tools follow the same split:
+
+- use `uv` and the root env for lightweight pure-Python checks such as `ruff` and tests that do not need LIBERO / MuJoCo
+- use the working Python 3.10 LIBERO simulator environment for commands that import `libero`, `robosuite`, MuJoCo, or TFDS
+- for those simulator commands, `PYTHONPATH=src` or `PYTHONPATH=src:third_party/libero` is expected; this makes the local `src/` code and vendored `third_party/libero` package importable without installing them into that env
+- do not assume `uv run ...` is the correct launcher for simulator-backed annotation tools unless that Python 3.10 stack has been explicitly mirrored into `uv`
+
+Typical pattern for these annotation utilities:
+
+```bash
+PYTHONPATH=src:third_party/libero "$HOME/miniconda3/envs/instructvla_libero/bin/python" \
+  -m annotation.libero_resolution_inspector --episode-index 0
+```
+
+Two local-eval-specific gotchas matter in this repo right now:
+
+- `examples/libero/main.py` must remain compatible with the Python 3.10 LIBERO eval env; do not use Python-3.11-only stdlib features there
+- W&B still imports `pkg_resources`, so the LIBERO eval env currently needs `setuptools<81`; if you repair or recreate `examples/libero/.venv`, verify that `python -c "import pkg_resources"` works inside it
 
 Follow `docs/libero_eval_slurm.md` and the scripts in `examples/libero/` for LIBERO eval instead of inventing a new bootstrap path.
 
@@ -79,6 +110,12 @@ W&B support is wired through both training and eval:
 - eval uses explicit CLI flags in `examples/libero/main.py` and the Slurm wrappers
 
 Do not silently remove or bypass this metadata plumbing when changing launch scripts.
+
+The local two-checkpoint LIBERO-10 logic LoRA workflow now has a dedicated sequential runner:
+
+- `scripts/eval_libero10_logic_lora_pair.sh`
+
+It starts checkpoint A, waits for the websocket server, runs the eval, tears the server down, then repeats for checkpoint B in the same persistent tmux-friendly workflow. Keep that script and `docs/local_eval_libero10_logic_lora.md` in sync if you change this path.
 
 The websocket serving path has already needed one important fix: policy inference must not block keepalive handling for long JAX/XLA steps. Be careful when changing either side of the websocket boundary:
 
