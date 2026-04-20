@@ -23,6 +23,7 @@ Treat `third_party/` as vendored code. Avoid editing it unless the task explicit
 - `src/openpi/training/data_loader.py`: dataset wiring, including LIBERO prompt selection
 - `src/openpi/serving/websocket_policy_server.py`: websocket serving path
 - `src/annotation/libero_demo_replay.py`: simulator-backed LIBERO replay and path-resolution utilities
+- `src/annotation/libero_masked_replay_visualization.py`: side-by-side original vs masked simulator replay visualization
 - `src/annotation/libero_resolution_inspector.py`: RLDS episode -> source HDF5 / BDDL / model XML inspection helper
 - `packages/openpi-client/src/openpi_client/websocket_client_policy.py`: websocket client used by eval
 - `scripts/train.py`: main training entrypoint
@@ -34,6 +35,7 @@ Treat `third_party/` as vendored code. Avoid editing it unless the task explicit
 - `examples/libero/eval_checkpoint.slurm`: current Slurm eval job
 - `scripts/submit_libero_eval_slurm.sh`: helper for submitting eval jobs
 - `docs/libero_eval_slurm.md`: human-facing instructions for the eval workflow
+- `MASKING_README.md`: end-to-end notes for LIBERO RGB instance masking in eval and replay
 - `EXPERIMENTS_APRIL_14.md`: concrete notes from the April 14 LIBERO training and eval session
 
 ## Environment And Tooling
@@ -57,6 +59,27 @@ The root project is the primary dev environment. LIBERO eval is different:
 - the Slurm eval flow can build a job-local env under `/tmp/...`
 - do not assume the root `.venv` is enough for LIBERO simulator work
 
+Use these Python environments for these areas:
+
+- `src/openpi/`, `scripts/train.py`, `scripts/serve_policy.py`, and most repo development:
+  use the root repo env, normally `.venv` via `uv run ...`
+- `examples/libero/main.py` and real LIBERO eval / simulator execution:
+  use `examples/libero/.venv/bin/python` when that repo-local env exists
+- `third_party/libero` when you want imports, breakpoints, or runtime behavior to match real LIBERO execution in this repo:
+  use `examples/libero/.venv/bin/python`
+- `src/annotation/` lightweight checks that do not need LIBERO / MuJoCo:
+  use the root repo env, e.g. `uv run` or `.venv/bin/python`
+- `src/annotation/` simulator-backed tools that import `libero`, `robosuite`, MuJoCo, or TFDS:
+  use the Python 3.10 LIBERO env, preferably `examples/libero/.venv/bin/python`
+- ad hoc fallback for simulator-backed annotation work:
+  `$HOME/miniconda3/envs/instructvla_libero/bin/python` is acceptable if the repo-local `examples/libero/.venv` is missing or broken, but prefer the repo-local env for reproducibility
+
+If you are choosing a VS Code interpreter while editing `third_party/libero` or debugging LIBERO simulator behavior, pick:
+
+```bash
+examples/libero/.venv/bin/python
+```
+
 The `src/annotation/` tools follow the same split:
 
 - use `uv` and the root env for lightweight pure-Python checks such as `ruff` and tests that do not need LIBERO / MuJoCo
@@ -67,9 +90,17 @@ The `src/annotation/` tools follow the same split:
 Typical pattern for these annotation utilities:
 
 ```bash
-PYTHONPATH=src:third_party/libero "$HOME/miniconda3/envs/instructvla_libero/bin/python" \
+PYTHONPATH=src:third_party/libero examples/libero/.venv/bin/python \
   -m annotation.libero_resolution_inspector --episode-index 0
 ```
+
+For masking / segmentation work:
+
+- `third_party/libero/libero/libero/envs/env_wrapper.py` now contains the masking-capable wrappers:
+  `MaskedSegmentationRenderEnv` and `DemoMaskedSegmentationRenderEnv`
+- `examples/libero/main.py` can use masked observations for policy eval when `--mask-instances-csv` is provided
+- `src/annotation/libero_demo_replay.py` can render masked simulator replays with `--masked-instance`
+- `src/annotation/libero_masked_replay_visualization.py` is the quickest way to inspect original vs masked replay side by side
 
 Two local-eval-specific gotchas matter in this repo right now:
 
