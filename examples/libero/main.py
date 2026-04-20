@@ -1,7 +1,7 @@
 import collections
 import dataclasses
-from datetime import UTC
 from datetime import datetime
+from datetime import timezone
 import json
 import logging
 import math
@@ -297,7 +297,7 @@ def _build_results_payload(
         "schema_version": 1,
         "status": status,
         "generated_at": run_started_at,
-        "updated_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "active_task": active_task,
         "task_suite_name": args.task_suite_name,
         "task_split_file": args.task_split_file,
@@ -390,7 +390,7 @@ def eval_libero(args: Args) -> None:
     # Set random seed
     np.random.seed(args.seed)
     _init_wandb(args)
-    run_started_at = datetime.now(UTC).isoformat()
+    run_started_at = datetime.now(timezone.utc).isoformat()
 
     # Initialize LIBERO task suite
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -427,7 +427,7 @@ def eval_libero(args: Args) -> None:
     if args.video_out_path:
         video_out_path = pathlib.Path(args.video_out_path)
     else:
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         run_tag = args.task_suite_name
         if args.prompt_override_file:
             run_tag += "_logic"

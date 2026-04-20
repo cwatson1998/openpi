@@ -4,13 +4,13 @@ This repo now includes a small tmux-based workflow for serving a checkpoint and 
 
 The main entrypoints are:
 
-- [`scripts/eval_libero_tmux.sh`](/home/christopher/Documents/openpi-finetune/openpi/scripts/eval_libero_tmux.sh)
-- [`scripts/watch_libero_tmux.sh`](/home/christopher/Documents/openpi-finetune/openpi/scripts/watch_libero_tmux.sh)
+- [`scripts/eval_libero_tmux.sh`](../scripts/eval_libero_tmux.sh)
+- [`scripts/watch_libero_tmux.sh`](../scripts/watch_libero_tmux.sh)
 
 The launcher creates a tmux session with two windows:
 
-- `server`: serves the checkpoint with [`scripts/serve_policy.py`](/home/christopher/Documents/openpi-finetune/openpi/scripts/serve_policy.py)
-- `eval`: runs the LIBERO evaluator from [`examples/libero/main.py`](/home/christopher/Documents/openpi-finetune/openpi/examples/libero/main.py)
+- `server`: serves the checkpoint with [`scripts/serve_policy.py`](../scripts/serve_policy.py)
+- `eval`: runs the LIBERO evaluator from [`examples/libero/main.py`](../examples/libero/main.py)
 
 ## Defaults
 
@@ -133,7 +133,7 @@ Example:
 ./scripts/eval_libero_tmux.sh --suite libero_10
 ```
 
-The evaluator itself sets different rollout horizons per suite in [`examples/libero/main.py`](/home/christopher/Documents/openpi-finetune/openpi/examples/libero/main.py), so no extra max-step flag is needed.
+The evaluator itself sets different rollout horizons per suite in [`examples/libero/main.py`](../examples/libero/main.py), so no extra max-step flag is needed.
 
 ## Changing Trial Count
 
@@ -153,7 +153,7 @@ Medium run:
 
 ## Passing Extra Evaluator Args
 
-Any arguments after `--` are passed directly to [`examples/libero/main.py`](/home/christopher/Documents/openpi-finetune/openpi/examples/libero/main.py). Because that script uses `tyro.cli(eval_libero)`, the flags need the `--args.` prefix.
+Any arguments after `--` are passed directly to [`examples/libero/main.py`](../examples/libero/main.py). Because that script uses `tyro.cli(eval_libero)`, the flags need the `--args.` prefix.
 
 Evaluate only specific task indices:
 
@@ -248,6 +248,21 @@ The venv used by default is:
 
 It should be created with Python 3.10 for this workflow.
 
+After installing the LIBERO requirements, make sure the env still has
+`pkg_resources` available:
+
+```bash
+examples/libero/.venv/bin/python -m ensurepip --upgrade
+examples/libero/.venv/bin/python -m pip install --upgrade 'setuptools<81'
+examples/libero/.venv/bin/python - <<'PY'
+import pkg_resources
+print("pkg_resources ok")
+PY
+```
+
+This is currently necessary because W&B still imports `pkg_resources`, while
+newer setuptools releases remove it.
+
 The launcher exports:
 
 - `PYTHONPATH=$REPO/src:$REPO/packages/openpi-client/src:$REPO/third_party/libero`
@@ -257,6 +272,11 @@ That `src` entry is important because `openpi` is a `src/` layout package in thi
 The policy server runs in the repo's main OpenPI environment by default:
 
 - `.venv`
+
+If you touch [`examples/libero/main.py`](../examples/libero/main.py),
+keep it Python-3.10-compatible. The local/tmux LIBERO eval flow still runs
+that file from the separate Python 3.10 simulator environment, not from the
+main Python 3.11 repo environment.
 
 This split is intentional: the LIBERO eval workflow currently needs a Python 3.10 environment because the pinned CUDA 11.3 torch wheels do not support Python 3.11, while the OpenPI project itself requires Python 3.11 for the policy server.
 
