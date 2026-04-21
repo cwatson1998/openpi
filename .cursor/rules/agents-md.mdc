@@ -1,0 +1,10 @@
+---
+description: Always read project AGENTS.md for repo conventions and workflows
+alwaysApply: true
+---
+
+# Read AGENTS.md
+
+Before planning or implementing substantive work in this repository, read **`AGENTS.md`** at the repo root and follow its guidelines (structure, tooling, important paths, and workflow notes).
+
+If `AGENTS.md` is updated during the session, re-read it when its guidance may affect the task.
