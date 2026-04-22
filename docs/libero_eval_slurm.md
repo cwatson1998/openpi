@@ -19,6 +19,13 @@ The default metadata is derived from the source checkpoint:
 - tags include:
   `eval`, `libero`, suite, prompt style, policy config, source train run, source checkpoint step
 
+During the run, the evaluator now also:
+
+- streams per-episode running metrics to W&B as episodes complete
+- writes incremental state to both `results.json` and `eval_progress.json`
+- uploads a bounded set of example rollout videos to W&B while the job is still running
+  currently the first success, first failure, and first error video per task
+
 The submit helper defaults to a conservative 24G+ VRAM node list:
 
 - `dj-a40-0.grasp.maas`
@@ -97,9 +104,18 @@ W&B:
 - the run name should match the eval name
 - the run group should match the source training run name
 - tags show suite, prompt type, policy config, and checkpoint step
+- running charts should update per episode rather than only per completed task
+- selected rollout videos may appear before the full eval finishes
 
 Eval artifacts are written under:
 
 ```bash
 data/libero/evals/<eval-name>/
+```
+
+Key files inside that directory:
+
+```bash
+data/libero/evals/<eval-name>/results.json
+data/libero/evals/<eval-name>/eval_progress.json
 ```
